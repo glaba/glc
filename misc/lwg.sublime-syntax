@@ -1,0 +1,61 @@
+%YAML 1.2
+---
+name: LWG
+file_extensions: [lwg]
+scope: source.lwg
+
+contexts:
+  # The prototype context is prepended to all contexts but those setting
+  # meta_include_prototype: false.
+  prototype:
+    - include: comments
+
+  main:
+    # The main context is the initial starting point of our syntax.
+    # Include other contexts from here (or specify them directly).
+    - include: keywords
+    - include: numbers
+    - include: types
+    - include: variables
+    - include: comments
+
+  keywords:
+    - match: '\b(if|else|for|in|range|trait|properties|always|units|buildings|traits)\b'
+      scope: keyword.control.lwg
+    - match: '\b(ALL|true|false)\b'
+      scope: constant.language.lwg
+    - match: '\b(or|and)\b'
+      scope: keyword.operator.lwg
+
+  numbers:
+    - match: '\b(-)?[0-9.]+\b'
+      scope: constant.numeric.lwg
+
+  types:
+    - match: '\b(bool|int|float)\b'
+      scope: entity.name.type.lwg
+
+  variables:
+    - match: '\b(type|this)\b'
+      scope: variable.language.lwg
+    - match: '\b[a-zA-Z][a-zA-Z0-9_]*\b'
+      scope: variable.other.lwg
+
+  templates:
+    - match: '<'
+      scope: source.lwg
+      push:
+        - meta_scope: source.lwg
+        - match: '>'
+          pop: true
+
+  comments:
+    # Comments begin with a '//' and finish at the end of the line.
+    - match: '//'
+      scope: punctuation.definition.comment.lwg
+      push:
+        # This is an anonymous context push for brevity.
+        - meta_scope: comment.line.double-slash.lwg
+        - match: $\n?
+          pop: true
+

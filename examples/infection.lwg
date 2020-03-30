@@ -1,0 +1,62 @@
+// Scratch code to explore what syntax might look like for a mod that spreads an infection between units
+// Will evolve and change greatly!
+
+trait infection {
+	properties {
+		infected : bool,
+		contagious : bool
+	}
+
+	always {
+		if infected {
+			this::hpRegenRate = this::hpRegenRate - 4;
+		}
+		if infected and contagious {
+			for unit : infection in range(2) {
+				unit.infected = true;
+			}
+		}
+	}
+}
+
+trait induces_contagiousness {
+	properties {
+		activated : bool
+	}
+
+	always {
+		if activated {
+			for unit : infection in range(300) {
+				unit.contagious = true;
+			}
+		}
+	}
+}
+
+trait activates_random_tower {
+	always {
+		for tower : induces_contagiousness in range(9) {
+			tower.activated = true;
+		}
+	}
+}
+
+units {
+	ALL {
+		traits {
+			infection
+		}
+	}
+
+	WigglyWolf {
+		traits {
+			activates_random_tower
+		}
+	}
+
+	RandomTower {
+		traits {
+			induces_contagiousness
+		}
+	}
+}
