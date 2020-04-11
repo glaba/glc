@@ -5,7 +5,7 @@ LDFLAGS  := -pthread
 SRC_FILES := $(wildcard src/*.cpp)
 OBJ_FILES := $(patsubst src/%.cpp, obj/%.o, $(SRC_FILES))
 
-.PHONY: all clean
+.PHONY: clean
 
 all: glc
 
