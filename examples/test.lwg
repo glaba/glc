@@ -1,0 +1,9 @@
+trait Test {
+	properties {
+	}
+
+	always {
+	}
+}
+
+unit test : Test;

@@ -1,10 +1,13 @@
 #include "cli.h"
 #include "parser.h"
+#include "pass_manager.h"
 
 #include <string>
 #include <iostream>
+#include <memory>
 
 using std::string;
+using std::unique_ptr;
 using none = std::monostate;
 
 int main(int argc, char **argv) {
@@ -21,5 +24,8 @@ int main(int argc, char **argv) {
     }
 
     parser p(input_file);
-    p.run();
+    unique_ptr<ast::program> program = p.run();
+
+    pass_manager pm(program.get());
+    
 }

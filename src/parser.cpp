@@ -1,5 +1,4 @@
 #include "parser.h"
-#include "ast.h"
 #include "pegtl.hpp"
 
 #include <iostream>
@@ -9,16 +8,13 @@
 #include <string>
 #include <functional>
 #include <type_traits>
+#include <fstream>
+#include <sstream>
 
 using namespace tao::pegtl;
 using std::unique_ptr;
 using std::make_unique;
 using std::vector;
-
-template <typename Compare, typename T>
-auto isa(T *val) -> bool {
-    return dynamic_cast<Compare*>(val) != nullptr;
-}
 
 /*** Convenience types ***/
 template <typename... Ts>
@@ -44,6 +40,7 @@ namespace rules {
     struct kw_this : TAO_PEGTL_STRING("this") {};
     struct kw_type : TAO_PEGTL_STRING("type") {};
     struct kw_if : TAO_PEGTL_STRING("if") {};
+    struct kw_unit : TAO_PEGTL_STRING("unit") {};
 
     /*** Types ***/
     struct ty_bool : TAO_PEGTL_STRING("bool") {};
@@ -54,9 +51,9 @@ namespace rules {
     /*******************************/
     /****** Always block code ******/
     /*******************************/
-    struct unit : sor<kw_this, kw_type, identifier> {};
+    struct unit_object : sor<kw_this, kw_type, identifier> {};
     struct member_operator : sor<TAO_PEGTL_STRING("::"), TAO_PEGTL_STRING("."), TAO_PEGTL_STRING("->")> {};
-    struct field : sseq<unit, member_operator, identifier> {};
+    struct field : sseq<unit_object, member_operator, identifier> {};
 
     /*** Arithmetic ***/
     struct add_op : one<'+'> {};
@@ -100,16 +97,17 @@ namespace rules {
     struct assignment : sseq<field, one<'='>, arithmetic, one<';'>> {};
     struct continuous_if : sseq<kw_if, logical, one<'{'>, always_body, one<'}'>> {};
 
-    struct always_body : sstar<sor<logical, assignment>> {};
+    struct always_body : sstar<sor<assignment, continuous_if>> {};
 
     /*** Program constructs ***/
     struct variable_decl : sseq<identifier, one<':'>, variable_type> {};
     struct properties : sseq<kw_properties, one<'{'>, cslist<variable_decl>, one<'}'>> {};
     struct always : sseq<kw_always, one<'{'>, always_body, one<'}'>> {};
     struct trait : sseq<kw_trait, identifier, one<'{'>, properties, always, one<'}'>> {};
+    struct unit : sseq<kw_unit, identifier, one<':'>, plus<identifier>, one<';'>> {};
 
     /*** Root node ***/
-    struct program : sseq<sstar<trait>> {};
+    struct program : sstar<sor<trait, unit>> {};
 };
 
 /*** Custom node type for parse tree ***/
@@ -222,11 +220,21 @@ namespace selectors {
     struct trait {
         static void apply(ast_node& n, ast::trait *data) {
             data->name = n.children[0]->string();
-            data->props = static_cast<ast::properties*>(n.children[1]->data.get());
-            data->logic = static_cast<ast::always*>(n.children[2]->data.get());
+            data->props = own_as<ast::properties>(n.children[1]->data);
+            data->body = own_as<ast::always_body>(n.children[2]->data);
         }
     };
     using trait_sel = typename selector<trait, ast::trait>::on<rules::trait>;
+
+    struct unit {
+        static void apply(ast_node& n, ast::unit *data) {
+            data->name = n.children[0]->string();
+            for (unsigned i = 1; i < n.children.size(); i++) {
+                data->traits.push_back(n.children[i]->string());
+            }
+        }
+    };
+    using unit_sel = typename selector<unit, ast::unit>::on<rules::unit>;
 
     struct field {
         static void apply(ast_node& n, ast::field *data) {
@@ -293,12 +301,14 @@ namespace selectors {
                 Impl::identify_op(*op, data, cur_root);
             }
 
-            // Set the final node containing the total "product" as the data for this node in the parse tree
+            // Print the parsed expression for debugging
             if constexpr (std::is_same<T, ast::logical>::value) {
-                std::cout << ast::print_logical(*cur_root) << std::endl;
+                DEBUG(std::cout << ast::print_logical(*cur_root) << std::endl);
             } else if constexpr (std::is_same<T, ast::arithmetic>::value) {
-                std::cout << ast::print_arithmetic(*cur_root) << std::endl;
+                DEBUG(std::cout << ast::print_arithmetic(*cur_root) << std::endl);
             }
+
+            // Set the final node containing the total "product" as the data for this node in the parse tree
             n->data = std::move(cur_root);
         }
     };
@@ -438,6 +448,65 @@ namespace selectors {
         using and_expr_sel = preserve_sel<1>::on<rules::and_expr>;
     }
 
+    struct assignment {
+        static void apply(ast_node& n, ast::assignment *data) {
+            data->lhs = own_as<ast::field>(n.children[0]->data);
+
+            auto& rhs = n.children[1];
+            if (rhs->template is_type<rules::arithmetic>()) {
+                data->rhs = own_as<ast::arithmetic>(rhs->data);
+            } else if (rhs->template is_type<rules::logical>()) {
+                data->rhs = own_as<ast::logical>(rhs->data);
+            }
+        }
+    };
+    using assignment_sel = typename selector<assignment, ast::assignment>::on<rules::assignment>;
+
+    struct continuous_if {
+        static void apply(ast_node& n, ast::continuous_if *data) {
+            data->condition = own_as<ast::logical>(n.children[0]->data);
+            data->body = own_as<ast::always_body>(n.children[1]->data);
+        }
+    };
+    using continuous_if_sel = typename selector<continuous_if, ast::continuous_if>::on<rules::continuous_if>;
+
+    struct always_body {
+        static void apply(ast_node& n, ast::always_body *data) {
+            for (auto& child : n.children) {
+                if (child->template is_type<rules::assignment>()) {
+                    data->exprs.push_back(own_as<ast::assignment>(child->data));
+                } else if (child->template is_type<rules::continuous_if>()) {
+                    data->exprs.push_back(own_as<ast::continuous_if>(child->data));
+                } else {
+                    assert("Unhandled child in rule always_body");
+                }
+            }
+        }
+    };
+    using always_body_sel = typename selector<always_body, ast::always_body>::on<rules::always_body>;
+
+    struct program : parse_tree::apply<program> {
+        static unique_ptr<ast::program> program_ast;
+
+        template <typename Node, typename... States>
+        static void transform(unique_ptr<Node>& n, States&&... st) {
+            auto data = make_unique<ast::program>();
+            for (auto& child : n->children) {
+                if (child->template is_type<rules::trait>()) {
+                    data->traits.push_back(own_as<ast::trait>(child->data));
+                } else if (child->template is_type<rules::unit>()) {
+                    data->units.push_back(own_as<ast::unit>(child->data));
+                } else {
+                    assert("Unhandled child in rule program");
+                }
+            }
+
+            program_ast = std::move(data);
+        }
+    };
+    unique_ptr<ast::program> program::program_ast;
+    using program_sel = typename program::on<rules::program>;
+
     using namespace arithmetic;
     using namespace logical;
 
@@ -446,28 +515,32 @@ namespace selectors {
         val_bool_sel, val_float_sel, val_int_sel,
         empty_sel<ast::ty_bool>::on<rules::ty_bool>, empty_sel<ast::ty_float>::on<rules::ty_float>, ty_int_sel,
         variable_type_sel, variable_decl_sel, properties_sel,
-        trait_sel,
         field_sel,
         arithmetic_value_sel, arithmetic_sel, mul_factor_sel, exp_factor_sel, add_sel, mul_sel, exp_sel,
         comparison_sel, negated_sel, logical_value_sel, logical_sel, and_factor_sel, or_expr_sel, and_expr_sel,
+        assignment_sel, continuous_if_sel,
+        always_body_sel,
+        trait_sel, unit_sel, program_sel,
 
         parse_tree::store_content::on<
             identifier,
             rules::member_operator, rules::kw_this, rules::kw_type,
             rules::add_op, rules::sub_op, rules::mul_op, rules::div_op, rules::mod_op, rules::exp_op,
             rules::and_op, rules::or_op,
-            rules::eq_op, rules::neq_op, rules::gt_op, rules::lt_op, rules::gte_op, rules::lte_op,
-            rules::always, rules::program
+            rules::eq_op, rules::neq_op, rules::gt_op, rules::lt_op, rules::gte_op, rules::lte_op
         >
     >;
 };
 
-
-void parser::run() {
+auto parser::run() -> unique_ptr<ast::program> {
     assert(analyze<rules::program>() == 0);
 
-    auto const root = parse_tree::parse<rules::program, ast_node, selectors::ast_selector>(string_input(input_file, ""));
-    parse_tree::print_dot(std::cout, *root);
+    std::ifstream file(input_file);
+    std::stringstream buffer;
+    buffer << file.rdbuf();
 
-    return;
+    auto const root = parse_tree::parse<rules::program, ast_node, selectors::ast_selector>(string_input(buffer.str(), ""));
+    DEBUG(parse_tree::print_dot(std::cout, *root));
+
+    return std::move(selectors::program::program_ast);
 }
