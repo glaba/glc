@@ -20,9 +20,11 @@ contexts:
     - include: comments
 
   keywords:
-    - match: '\b(if|else|for|in|range|trait|properties|always|units|buildings|traits)\b'
+    - match: '\b(if|becomes|for|in|range|of|with|trait|properties|always|unit|building|traits)\b'
       scope: keyword.control.lwg
-    - match: '\b(ALL|true|false)\b'
+    - match: '\b(time)\b'
+      scope: keyword.other.lwg
+    - match: '\b(true|false)\b'
       scope: constant.language.lwg
     - match: '\b(or|and)\b'
       scope: keyword.operator.lwg

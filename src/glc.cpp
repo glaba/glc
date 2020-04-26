@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "parser.h"
 #include "pass_manager.h"
+#include "collapse_traits.h"
 
 #include <string>
 #include <iostream>
@@ -27,5 +28,8 @@ int main(int argc, char **argv) {
     unique_ptr<ast::program> program = p.run();
 
     pass_manager pm(program.get());
-    
+    pm.get_pass<collapse_traits>();
+    for (auto& error : pm.get_errors<collapse_traits>()) {
+        std::cout << error << std::endl;
+    }
 }

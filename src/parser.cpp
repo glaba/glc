@@ -24,7 +24,7 @@ struct sstar : star<pad<Ts, space>...> {};
 template <typename... Ts>
 struct sopt : opt<pad<Ts, space>...> {};
 template <typename T>
-struct cslist : opt<list<T, pad<one<','>, space>>> {};
+struct cslist : list<T, pad<one<','>, space>> {};
 struct spaces : plus<space> {};
 
 namespace rules {
@@ -40,7 +40,11 @@ namespace rules {
     struct kw_this : TAO_PEGTL_STRING("this") {};
     struct kw_type : TAO_PEGTL_STRING("type") {};
     struct kw_if : TAO_PEGTL_STRING("if") {};
+    struct kw_for : TAO_PEGTL_STRING("for") {};
+    struct kw_in_range_of : sseq<TAO_PEGTL_STRING("in"), TAO_PEGTL_STRING("range"), TAO_PEGTL_STRING("of")> {};
+    struct kw_with_trait : sseq<TAO_PEGTL_STRING("with"), TAO_PEGTL_STRING("trait")> {};
     struct kw_unit : TAO_PEGTL_STRING("unit") {};
+    struct kw_becomes : TAO_PEGTL_STRING("becomes") {};
 
     /*** Types ***/
     struct ty_bool : TAO_PEGTL_STRING("bool") {};
@@ -93,21 +97,25 @@ namespace rules {
     struct and_factor : sseq<logical_value, star<and_expr>> {};
     struct and_expr : sseq<and_op, logical_value> {};
 
+    /*** Always body and expressions ***/
     struct always_body;
     struct assignment : sseq<field, one<'='>, arithmetic, one<';'>> {};
     struct continuous_if : sseq<kw_if, logical, one<'{'>, always_body, one<'}'>> {};
+    struct transition_if : sseq<kw_if, kw_becomes, logical, one<'{'>, always_body, one<'}'>> {};
+    struct for_in : sseq<kw_for, identifier, kw_in_range_of, unit_object,
+        opt<kw_with_trait, cslist<identifier>>, one<'{'>, always_body, one<'}'>> {};
 
-    struct always_body : sstar<sor<assignment, continuous_if>> {};
+    struct always_body : sstar<sor<assignment, continuous_if, transition_if, for_in>> {};
 
     /*** Program constructs ***/
     struct variable_decl : sseq<identifier, one<':'>, variable_type> {};
-    struct properties : sseq<kw_properties, one<'{'>, cslist<variable_decl>, one<'}'>> {};
+    struct properties : sseq<kw_properties, one<'{'>, opt<cslist<variable_decl>>, one<'}'>> {};
     struct always : sseq<kw_always, one<'{'>, always_body, one<'}'>> {};
     struct trait : sseq<kw_trait, identifier, one<'{'>, properties, always, one<'}'>> {};
-    struct unit : sseq<kw_unit, identifier, one<':'>, plus<identifier>, one<';'>> {};
+    struct unit_traits : sseq<kw_unit, identifier, one<':'>, plus<identifier>, one<';'>> {};
 
     /*** Root node ***/
-    struct program : sstar<sor<trait, unit>> {};
+    struct program : sstar<sor<trait, unit_traits>> {};
 };
 
 /*** Custom node type for parse tree ***/
@@ -126,6 +134,15 @@ namespace selectors {
     template <typename Target, typename Source>
     auto own_as(unique_ptr<Source>& src) -> unique_ptr<Target> {
         return unique_ptr<Target>(static_cast<Target*>(src.release()));
+    }
+
+    // Sets the parent of the child nodes to point to the provided parent node
+    // U, T, and Rest... should all be pointer-like objects to ast::node
+    template <typename U> void set_parent(U& parent) {}
+    template <typename U, typename T, typename... Rest>
+    void set_parent(U& parent, T& child, Rest&... rest) {
+        child->parent() = static_cast<ast::node*>(&*parent);
+        set_parent(parent, rest...);
     }
 
     namespace utility {
@@ -189,12 +206,22 @@ namespace selectors {
 
     struct variable_type {
         static void apply(ast_node& n, ast::variable_type *data) {
-            auto child = own_as<ast::ty>(n.children[0]->data);
-            data->type = child->get_type();
-            if (data->type == ast::type_enum::INT) {
-                auto int_child = own_as<ast::ty_int>(child);
+            auto type_id = n.children[0]->data->get_id();
+
+            if (type_id == ast::ty_bool::id()) {
+                data->type = ast::type_enum::BOOL;
+            }
+            else if (type_id == ast::ty_float::id()) {
+                data->type = ast::type_enum::FLOAT;
+            }
+            else if (type_id == ast::ty_int::id()) {
+                data->type = ast::type_enum::INT;
+                auto int_child = own_as<ast::ty_int>(n.children[0]->data);
                 data->min = int_child->min;
                 data->max = int_child->max;
+            }
+            else {
+                assert(false && "Unexpected type");
             }
         }
     };
@@ -204,6 +231,7 @@ namespace selectors {
         static void apply(ast_node& n, ast::variable_decl *data) {
             data->name = n.children[0]->string();
             data->type = own_as<ast::variable_type>(n.children[1]->data);
+            set_parent(data, data->type);
         };
     };
     using variable_decl_sel = typename selector<variable_decl, ast::variable_decl>::on<rules::variable_decl>;
@@ -211,6 +239,7 @@ namespace selectors {
     struct properties {
         static void apply(ast_node& n, ast::properties *data) {
             for (auto& child : n.children) {
+                set_parent(data, child->data);
                 data->variable_declarations.push_back(own_as<ast::variable_decl>(child->data));
             }
         }
@@ -222,35 +251,45 @@ namespace selectors {
             data->name = n.children[0]->string();
             data->props = own_as<ast::properties>(n.children[1]->data);
             data->body = own_as<ast::always_body>(n.children[2]->data);
+            set_parent(data, data->props, data->body);
         }
     };
     using trait_sel = typename selector<trait, ast::trait>::on<rules::trait>;
 
-    struct unit {
-        static void apply(ast_node& n, ast::unit *data) {
+    struct unit_traits {
+        static void apply(ast_node& n, ast::unit_traits *data) {
             data->name = n.children[0]->string();
             for (unsigned i = 1; i < n.children.size(); i++) {
                 data->traits.push_back(n.children[i]->string());
             }
         }
     };
-    using unit_sel = typename selector<unit, ast::unit>::on<rules::unit>;
+    using unit_traits_sel = typename selector<unit_traits, ast::unit_traits>::on<rules::unit_traits>;
+
+    auto parse_unit_object(ast_node& n) -> ast::unit_object {
+        auto unit = ast::unit_object();
+
+        if (n.is_type<rules::kw_this>()) {
+            unit = ast::this_unit();
+        }
+        else if (n.is_type<rules::kw_type>()) {
+            unit = ast::type_unit();
+        }
+        else if (n.is_type<identifier>()) {
+            auto id = ast::identifier_unit();
+            id.identifier = n.string();
+            unit = id;
+        }
+        else {
+            assert(false && "Provided parse tree node does not contain a unit object");
+        }
+
+        return unit;
+    }
 
     struct field {
         static void apply(ast_node& n, ast::field *data) {
-            auto& field_type = n.children[0];
-
-            if (field_type->template is_type<rules::kw_this>()) {
-                data->field_type = ast::this_field();
-            }
-            else if (field_type->template is_type<rules::kw_type>()) {
-                data->field_type = ast::type_field();
-            }
-            else if (field_type->template is_type<identifier>()) {
-                auto unit = ast::unit_field();
-                unit.identifier = field_type->string();
-                data->field_type = unit;
-            }
+            data->unit = parse_unit_object(*n.children[0]);
 
             auto& member_op = n.children[1];
 
@@ -274,11 +313,11 @@ namespace selectors {
     // constructs a left-associative expression tree from the parse tree
     //
     // The rules that this applies to are arithmetic, mul_factor, exp_factor, logical, and and_factor. Their selectors
-    //  must CRTP this class and implement a function identify_op, which takes: an ast_node object
-    //  containing the operator, an Op object containing two operands, and an object of type T where a
-    //  casted version of the generic Op object to a specific AST type representing the operation should be placed
-    template <typename Impl, typename T, typename Op>
-    struct expression_tree_builder : parse_tree::apply<expression_tree_builder<Impl, T, Op>> {
+    //  must CRTP this class and implement a function create_op: this function takes the rule corresponding to the
+    //  operation, and the LHS and RHS expressions, and returns a unique_ptr<T> representing the binary operation,
+    //  setting all parent-child relationships correctly. It can do this by using the construct_op function in this struct
+    template <typename Impl, typename T>
+    struct expression_tree_builder : parse_tree::apply<expression_tree_builder<Impl, T>> {
         template <typename Node, typename... States>
         static void transform(unique_ptr<Node>& n, States&&... st) {
             if (n->children.size() == 1) {
@@ -289,16 +328,13 @@ namespace selectors {
             // Construct a left associative tree of operations
             auto cur_root = own_as<T>(n->children[0]->data);
             for (unsigned i = 1; i < n->children.size(); i++) {
-                auto data = make_unique<Op>();
-                data->expr_1 = std::move(cur_root);
-                data->expr_2 = own_as<T>(n->children[i]->data);
+                auto expr_1 = std::move(cur_root);
+                auto expr_2 = own_as<T>(n->children[i]->data);
 
                 // Extract the operator from the current child and provide it to the Impl
                 //  so that the Impl creates the correct node type
-                cur_root = make_unique<T>();
                 auto& op = n->children[i]->children[0];
-
-                Impl::identify_op(*op, data, cur_root);
+                cur_root = Impl::create_op(*op, std::move(expr_1), std::move(expr_2));
             }
 
             // Print the parsed expression for debugging
@@ -310,6 +346,19 @@ namespace selectors {
 
             // Set the final node containing the total "product" as the data for this node in the parse tree
             n->data = std::move(cur_root);
+        }
+
+        template <typename Op>
+        static auto construct_op(unique_ptr<T>&& expr_1, unique_ptr<T>&& expr_2) -> unique_ptr<T> {
+            auto op = make_unique<Op>();
+            op->expr_1 = std::move(expr_1);
+            op->expr_2 = std::move(expr_2);
+            set_parent(op, op->expr_1, op->expr_2);
+
+            auto wrapper = make_unique<T>();
+            set_parent(wrapper, op);
+            wrapper->expr = std::move(op);
+            return wrapper;
         }
     };
 
@@ -329,43 +378,47 @@ namespace selectors {
 
                 // If the child is not an arithmetic expression already, we must wrap it in an arithmetic_value object
                 auto arithmetic_val = make_unique<ast::arithmetic_value>();
-                if (child->template is_type<rules::val_int>())        arithmetic_val->value = own_as<ast::val_int>(child_data);
-                else if (child->template is_type<rules::val_float>()) arithmetic_val->value = own_as<ast::val_float>(child_data);
+                if (child->template is_type<rules::val_int>())        arithmetic_val->value = own_as<ast::val_int>(child_data)->value;
+                else if (child->template is_type<rules::val_float>()) arithmetic_val->value = own_as<ast::val_float>(child_data)->value;
                 else if (child->template is_type<rules::field>())     arithmetic_val->value = own_as<ast::field>(child_data);
 
                 auto data = make_unique<ast::arithmetic>();
+                set_parent(data, arithmetic_val);
                 data->expr = std::move(arithmetic_val);
                 n->data = std::move(data);
             }
         };
         using arithmetic_value_sel = typename arithmetic_value::on<rules::arithmetic_value>;
 
-        struct arithmetic : expression_tree_builder<arithmetic, ast::arithmetic, ast::arithmetic_op> {
-            static void identify_op(ast_node& op, unique_ptr<ast::arithmetic_op>& data, unique_ptr<ast::arithmetic>& dest) {
+        struct arithmetic : expression_tree_builder<arithmetic, ast::arithmetic> {
+            static auto create_op(ast_node& op, unique_ptr<ast::arithmetic>&& expr_1, unique_ptr<ast::arithmetic>&& expr_2) -> unique_ptr<ast::arithmetic> {
                 if (op.is_type<rules::add_op>())
-                    dest->expr = own_as<ast::add>(data);
+                    return construct_op<ast::add>(std::move(expr_1), std::move(expr_2));
                 else if (op.is_type<rules::sub_op>())
-                    dest->expr = own_as<ast::sub>(data);
+                    return construct_op<ast::sub>(std::move(expr_1), std::move(expr_2));
+                else
+                    assert(false && "Unexpected operation");
             }
         };
         using arithmetic_sel = typename arithmetic::on<rules::arithmetic>;
 
-        struct mul_factor : expression_tree_builder<mul_factor, ast::arithmetic, ast::arithmetic_op> {
-            static void identify_op(ast_node& op, unique_ptr<ast::arithmetic_op>& data, unique_ptr<ast::arithmetic>& dest) {
+        struct mul_factor : expression_tree_builder<mul_factor, ast::arithmetic> {
+            static auto create_op(ast_node& op, unique_ptr<ast::arithmetic>&& expr_1, unique_ptr<ast::arithmetic>&& expr_2) -> unique_ptr<ast::arithmetic> {
                 if (op.is_type<rules::mul_op>())
-                    dest->expr = own_as<ast::mul>(data);
+                    return construct_op<ast::mul>(std::move(expr_1), std::move(expr_2));
                 else if (op.is_type<rules::div_op>())
-                    dest->expr = own_as<ast::div>(data);
+                    return construct_op<ast::div>(std::move(expr_1), std::move(expr_2));
                 else if (op.is_type<rules::mod_op>())
-                    dest->expr = own_as<ast::mod>(data);
+                    return construct_op<ast::mod>(std::move(expr_1), std::move(expr_2));
+                else
+                    assert(false && "Unexpected operation");
             }
         };
         using mul_factor_sel = typename mul_factor::on<rules::mul_factor>;
 
-        struct exp_factor : expression_tree_builder<exp_factor, ast::arithmetic, ast::arithmetic_op> {
-            static void identify_op(ast_node& op, unique_ptr<ast::arithmetic_op>& data, unique_ptr<ast::arithmetic>& dest) {
-                if (op.is_type<rules::exp_op>())
-                    dest->expr = own_as<ast::exp>(data);
+        struct exp_factor : expression_tree_builder<exp_factor, ast::arithmetic> {
+            static auto create_op(ast_node& op, unique_ptr<ast::arithmetic>&& expr_1, unique_ptr<ast::arithmetic>&& expr_2) -> unique_ptr<ast::arithmetic> {
+                return construct_op<ast::exp>(std::move(expr_1), std::move(expr_2));
             }
         };
         using exp_factor_sel = typename exp_factor::on<rules::exp_factor>;
@@ -382,6 +435,7 @@ namespace selectors {
             static void apply(ast_node& n, ast::comparison *data) {
                 data->lhs = own_as<ast::arithmetic>(n.children[0]->data);
                 data->rhs = own_as<ast::arithmetic>(n.children[2]->data);
+                set_parent(data, data->lhs, data->rhs);
 
                 auto& op = n.children[1];
                 if (op->template is_type<rules::eq_op>()) data->comparison_type = ast::comparison_enum::EQ;
@@ -397,6 +451,7 @@ namespace selectors {
         struct negated {
             static void apply(ast_node& n, ast::negated *data) {
                 data->expr = own_as<ast::logical>(n.children[0]->data);
+                set_parent(data, data->expr);
             };
         };
         using negated_sel = typename selector<negated, ast::negated>::on<rules::negated>;
@@ -416,6 +471,7 @@ namespace selectors {
                 // If the child is not a logical expression already, we must wrap it in one
                 // comparison, val_bool, negated, sseq<one<'('>, logical, one<')'>>, field
                 auto data = make_unique<ast::logical>();
+                set_parent(data, child_data);
                 if (child->template is_type<rules::field>())
                     data->expr = own_as<ast::field>(child_data);
                 else if (child->template is_type<rules::val_bool>())
@@ -430,16 +486,16 @@ namespace selectors {
         };
         using logical_value_sel = typename logical_value::on<rules::logical_value>;
 
-        struct logical : expression_tree_builder<logical, ast::logical, ast::logical_op> {
-            static void identify_op(ast_node& op, unique_ptr<ast::logical_op>& data, unique_ptr<ast::logical>& dest) {
-                dest->expr = own_as<ast::or_op>(data);
+        struct logical : expression_tree_builder<logical, ast::logical> {
+            static auto create_op(ast_node& op, unique_ptr<ast::logical>&& expr_1, unique_ptr<ast::logical>&& expr_2) -> unique_ptr<ast::logical> {
+                return construct_op<ast::or_op>(std::move(expr_1), std::move(expr_2));
             }
         };
         using logical_sel = typename logical::on<rules::logical>;
 
-        struct and_factor : expression_tree_builder<and_factor, ast::logical, ast::logical_op> {
-            static void identify_op(ast_node& op, unique_ptr<ast::logical_op>& data, unique_ptr<ast::logical>& dest) {
-                dest->expr = own_as<ast::and_op>(data);
+        struct and_factor : expression_tree_builder<and_factor, ast::logical> {
+            static auto create_op(ast_node& op, unique_ptr<ast::logical>&& expr_1, unique_ptr<ast::logical>&& expr_2) -> unique_ptr<ast::logical> {
+                return construct_op<ast::and_op>(std::move(expr_1), std::move(expr_2));
             }
         };
         using and_factor_sel = typename and_factor::on<rules::and_factor>;
@@ -450,6 +506,8 @@ namespace selectors {
 
     struct assignment {
         static void apply(ast_node& n, ast::assignment *data) {
+            set_parent(data, n.children[0]->data, n.children[1]->data);
+
             data->lhs = own_as<ast::field>(n.children[0]->data);
 
             auto& rhs = n.children[1];
@@ -462,21 +520,46 @@ namespace selectors {
     };
     using assignment_sel = typename selector<assignment, ast::assignment>::on<rules::assignment>;
 
-    struct continuous_if {
-        static void apply(ast_node& n, ast::continuous_if *data) {
+    template <typename IfAstType>
+    struct if_expr {
+        static void apply(ast_node& n, IfAstType *data) {
             data->condition = own_as<ast::logical>(n.children[0]->data);
             data->body = own_as<ast::always_body>(n.children[1]->data);
+            set_parent(data, data->condition, data->body);
         }
     };
-    using continuous_if_sel = typename selector<continuous_if, ast::continuous_if>::on<rules::continuous_if>;
+    using continuous_if_sel = typename selector<if_expr<ast::continuous_if>, ast::continuous_if>::on<rules::continuous_if>;
+    using transition_if_sel = typename selector<if_expr<ast::transition_if>, ast::transition_if>::on<rules::transition_if>;
+
+    struct for_in {
+        static void apply(ast_node& n, ast::for_in *data) {
+            data->variable = n.children[0]->string();
+            data->range_unit = parse_unit_object(*n.children[1]);
+
+            // Parse the next set of children as required traits as long as they are identifiers
+            for (unsigned i = 2; n.children[i]->template is_type<identifier>(); i++) {
+                data->traits.push_back(n.children[i]->string());
+            }
+
+            data->body = own_as<ast::always_body>(n.children.back()->data);
+            set_parent(data, data->body);
+        }
+    };
+    using for_in_sel = typename selector<for_in, ast::for_in>::on<rules::for_in>;
 
     struct always_body {
         static void apply(ast_node& n, ast::always_body *data) {
             for (auto& child : n.children) {
+                set_parent(data, child->data);
+
                 if (child->template is_type<rules::assignment>()) {
                     data->exprs.push_back(own_as<ast::assignment>(child->data));
                 } else if (child->template is_type<rules::continuous_if>()) {
                     data->exprs.push_back(own_as<ast::continuous_if>(child->data));
+                } else if (child->template is_type<rules::transition_if>()) {
+                    data->exprs.push_back(own_as<ast::transition_if>(child->data));
+                } else if (child->template is_type<rules::for_in>()) {
+                    data->exprs.push_back(own_as<ast::for_in>(child->data));
                 } else {
                     assert("Unhandled child in rule always_body");
                 }
@@ -492,10 +575,12 @@ namespace selectors {
         static void transform(unique_ptr<Node>& n, States&&... st) {
             auto data = make_unique<ast::program>();
             for (auto& child : n->children) {
+                set_parent(data, child->data);
+
                 if (child->template is_type<rules::trait>()) {
                     data->traits.push_back(own_as<ast::trait>(child->data));
-                } else if (child->template is_type<rules::unit>()) {
-                    data->units.push_back(own_as<ast::unit>(child->data));
+                } else if (child->template is_type<rules::unit_traits>()) {
+                    data->all_unit_traits.push_back(own_as<ast::unit_traits>(child->data));
                 } else {
                     assert("Unhandled child in rule program");
                 }
@@ -518,9 +603,9 @@ namespace selectors {
         field_sel,
         arithmetic_value_sel, arithmetic_sel, mul_factor_sel, exp_factor_sel, add_sel, mul_sel, exp_sel,
         comparison_sel, negated_sel, logical_value_sel, logical_sel, and_factor_sel, or_expr_sel, and_expr_sel,
-        assignment_sel, continuous_if_sel,
+        assignment_sel, continuous_if_sel, transition_if_sel, for_in_sel,
         always_body_sel,
-        trait_sel, unit_sel, program_sel,
+        trait_sel, unit_traits_sel, program_sel,
 
         parse_tree::store_content::on<
             identifier,

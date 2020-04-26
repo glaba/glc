@@ -1,8 +1,28 @@
+trait T1 {
+	properties {
+		var_T1 : bool
+	}
+
+	always {}
+}
+
+trait T2 {
+	properties {
+		var_T2: bool
+	}
+
+	always {}
+}
+
 trait Test {
 	properties {
+		var1 : int<0, 5>
 	}
 
 	always {
+		for blah in range of this with trait Test, T2, T1, T1 {
+			blah.var_T1 = 5;
+		}
 	}
 }
 

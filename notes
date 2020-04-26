@@ -1,0 +1,31 @@
+Notes:
+
+Process to follow when adding a new expression to the parser:
+	Create the rule
+	Create the corresponding AST type, inheriting from node_impl using CRTP
+	Create a selector for the rule and add the selector to the list of selectors
+		If the rule has children, set their parent to point to the current AST node
+	Create a visitor for the AST node if it has children
+
+Fields of units that can be used freely and related notes:
+	startHp
+	startMana
+	supplyProvided
+	size
+	buildTime (divide modifier by 20)
+	cost
+	healthbarOffset
+	healthbarWidth
+	selectionOffsetY
+	tabPriority
+	potentially the volumes
+	dustCreationChance (multiply modifier by 20)
+	visionHeightBonus
+	oscillationAmplitude
+	height
+	cargoUse
+	projectileStartHeight
+	lifetime (divide modifier by 20)
+	limit
+
+	All checks for scaled quantities should not be equalities but tight inequalities
