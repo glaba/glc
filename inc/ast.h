@@ -18,6 +18,9 @@ namespace ast {
 		virtual ~node() {}
 		virtual auto get_id() -> size_t = 0;
 		virtual auto parent() -> node*& = 0;
+		virtual auto filename() -> string& = 0;
+		virtual auto line() -> size_t& = 0;
+		virtual auto col() -> size_t& = 0;
 	};
 
 	template <typename Impl>
@@ -31,11 +34,26 @@ namespace ast {
 		}
 
 		virtual auto parent() -> node*& {
-			return this->parent_;
+			return parent_;
+		}
+
+		virtual auto filename() -> string& {
+			return filename_;
+		}
+
+		virtual auto line() -> size_t& {
+			return line_;
+		}
+
+		virtual auto col() -> size_t& {
+			return col_;
 		}
 
 	private:
 		node* parent_;
+		string filename_;
+		size_t line_;
+		size_t col_;
 	};
 
 	template <typename Check>

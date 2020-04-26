@@ -36,8 +36,9 @@ public:
 	}
 
 	template <typename Pass>
-	void error(std::string const& err) {
-		errors[typeid(Pass).hash_code()].push_back(err);
+	void error(ast::node& n, std::string const& err) {
+		errors[typeid(Pass).hash_code()].push_back(
+			n.filename() + ":" + std::to_string(n.line()) + ":" + std::to_string(n.col()) + ": " + err);
 	}
 
 	template <typename Pass>

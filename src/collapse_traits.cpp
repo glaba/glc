@@ -23,54 +23,50 @@ struct rename_variable_uses_visitor {
 	rename_variable_uses_visitor(pass_manager& pm, ast::program& program, string trait_name)
 		: pm(pm), program(program), trait_name(trait_name) {}
 
-
 	void operator()(ast::field& f) {
+		// Only user-defined custom fields in traits are being renamed
+		if (f.member_op != ast::member_op_enum::CUSTOM) {
+			return;
+		}
+
 		if (std::holds_alternative<ast::identifier_unit>(f.unit)) {
 			auto identifier = std::get<ast::identifier_unit>(f.unit).identifier;
 
 			// Follow parent pointers until we find the for_in loop where the identifier was declared
 			auto parent = ast::find_parent<ast::for_in>(f, [&] (ast::for_in& loop) { return loop.variable == identifier; });
 
-			if (parent) {
-				auto& traits = static_cast<ast::for_in*>(parent)->traits;
+			if (!parent) {
+				pm.error<collapse_traits>(f, "Undeclared identifier " + identifier);
+				return;
+			}
 
-				if (f.member_op == ast::member_op_enum::CUSTOM) {
-					// Find out which trait the field name came from
-					auto trait = string();
-					// Visit all variable declarations
-					auto decl_visitor = [&] (ast::variable_decl& decl) {
-						if (decl.name == f.field_name) {
-							// Find the trait corresponding to this declaration
-							auto trait_node = ast::find_parent<ast::trait>(decl);
-							assert(trait_node != nullptr);
-							if (std::find(traits.begin(), traits.end(), trait_node->name) != traits.end()) {
-								trait = trait_node->name;
-							}
-						}
-					};
-					visit<ast::program, decltype(decl_visitor)>()(program, decl_visitor);
+			auto& traits = static_cast<ast::for_in*>(parent)->traits;
 
-					if (trait == "") {
-						pm.error<collapse_traits>("Field " + f.field_name + " not a member of any specified trait");
-					} else {
-						f.field_name = trait + "_" + f.field_name;
+			// Find out which trait the field name came from by visiting all variable declarations
+			auto trait = string();
+			auto decl_visitor = [&] (ast::variable_decl& decl) {
+				if (decl.name == f.field_name) {
+					// Find the trait corresponding to this declaration
+					auto trait_node = ast::find_parent<ast::trait>(decl);
+					assert(trait_node != nullptr);
+					if (std::find(traits.begin(), traits.end(), trait_node->name) != traits.end()) {
+						trait = trait_node->name;
 					}
 				}
+			};
+			visit<ast::program, decltype(decl_visitor)>()(program, decl_visitor);
+
+			if (trait == "") {
+				pm.error<collapse_traits>(f, "Field " + f.field_name + " not a member of any specified trait");
 			} else {
-				pm.error<collapse_traits>("Undeclared identifier " + identifier);
+				f.field_name = trait + "_" + f.field_name;
 			}
 		} else if (std::holds_alternative<ast::this_unit>(f.unit)) {
-			// Built-in and language properties are not trait-specific, and don't need renaming
-			if (f.member_op == ast::member_op_enum::CUSTOM) {
-				f.field_name = trait_name + "_" + f.field_name;
-			}
+			f.field_name = trait_name + "_" + f.field_name;
 		} else {
 			// This unit is type, which means that none of its field names should be changed,
 			//  since any field should only be referring to built-in or language properties
-			// Assert this property
-			if (f.member_op == ast::member_op_enum::CUSTOM) {
-				pm.error<collapse_traits>("Cannot access custom properties of special unit object 'type'");
-			}
+			pm.error<collapse_traits>(f, "Cannot access custom properties of special unit object 'type'");
 		}
 	}
 };

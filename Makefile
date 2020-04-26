@@ -1,5 +1,5 @@
 CXX      := g++
-CXXFLAGS := -Iinc -std=c++17 -Wall -O0 -g -fsanitize=address
+CXXFLAGS := -Iinc -std=c++17 -Wall -O0 -g
 all:   CXXFLAGS += -D'DEBUG(body)='
 debug: CXXFLAGS += -D'DEBUG(body)=body'
 LDFLAGS  :=

@@ -10,11 +10,13 @@
 #include <type_traits>
 #include <fstream>
 #include <sstream>
+#include <map>
 
 using namespace tao::pegtl;
 using std::unique_ptr;
 using std::make_unique;
 using std::vector;
+using std::map;
 
 /*** Convenience types ***/
 template <typename... Ts>
@@ -115,7 +117,7 @@ namespace rules {
     struct unit_traits : sseq<kw_unit, identifier, one<':'>, plus<identifier>, one<';'>> {};
 
     /*** Root node ***/
-    struct program : sstar<sor<trait, unit_traits>> {};
+    struct program : sseq<sstar<sor<trait, unit_traits>>, eof> {};
 };
 
 /*** Custom node type for parse tree ***/
@@ -128,6 +130,16 @@ struct ast_node : parse_tree::node {
     unique_ptr<ast::node> data;
     vector<unique_ptr<ast_node>> children;
 };
+
+// Stores input to parser that will be used to track line / col numbers
+// Input is created by concatenating all input files together
+unique_ptr<string_input<>> input;
+
+// Map from starting line number in input to corresponding input file
+map<size_t, std::string> line_to_file;
+
+// Stores resulting program AST
+unique_ptr<ast::program> program_ast;
 
 /*** Selectors for AST nodes ***/
 namespace selectors {
@@ -146,10 +158,34 @@ namespace selectors {
     }
 
     namespace utility {
-        template <typename Impl, typename ASTNodeType>
-        struct selector : parse_tree::apply<selector<Impl, ASTNodeType>> {
+        // Base selector class used by all others that sets line and col number
+        // Expects that n->data is set by Impl
+        template <typename Impl>
+        struct generic_selector : parse_tree::apply<generic_selector<Impl>> {
             template <typename Node, typename... States>
             static void transform(unique_ptr<Node>& n, States&&... st) {
+                Impl::transform(n);
+                n->data->col() = input->byte_in_line();
+
+                // Find the filename and its start line
+                for (auto& [line, filename] : line_to_file) {
+                    if (input->line() >= line) {
+                        n->data->line() = input->line() - line;
+                        n->data->filename() = filename;
+                    }
+                }
+
+                if (n->data->get_id() == ast::program::id()) {
+                    program_ast = own_as<ast::program>(n->data);
+                }
+            }
+        };
+
+        // Selector class used when producing only one type of AST node
+        template <typename Impl, typename ASTNodeType>
+        struct selector : generic_selector<selector<Impl, ASTNodeType>> {
+            template <typename Node>
+            static void transform(unique_ptr<Node>& n) {
                 auto data = make_unique<ASTNodeType>();
                 Impl::apply(*n.get(), data.get());
                 n->data = std::move(data);
@@ -165,9 +201,9 @@ namespace selectors {
 
         // This selector simply takes that data from the Ith child and sets it as its own
         template <unsigned I>
-        struct preserve_sel : parse_tree::apply<preserve_sel<I>> {
-            template <typename Node, typename... States>
-            static void transform(unique_ptr<Node>& n, States&&... st) {
+        struct preserve_sel : generic_selector<preserve_sel<I>> {
+            template <typename Node>
+            static void transform(unique_ptr<Node>& n) {
                 n->data = std::move(n->children[I]->data);
             }
         };
@@ -317,9 +353,9 @@ namespace selectors {
     //  operation, and the LHS and RHS expressions, and returns a unique_ptr<T> representing the binary operation,
     //  setting all parent-child relationships correctly. It can do this by using the construct_op function in this struct
     template <typename Impl, typename T>
-    struct expression_tree_builder : parse_tree::apply<expression_tree_builder<Impl, T>> {
-        template <typename Node, typename... States>
-        static void transform(unique_ptr<Node>& n, States&&... st) {
+    struct expression_tree_builder : generic_selector<expression_tree_builder<Impl, T>> {
+        template <typename Node>
+        static void transform(unique_ptr<Node>& n) {
             if (n->children.size() == 1) {
                 n->data = std::move(n->children[0]->data);
                 return;
@@ -365,9 +401,9 @@ namespace selectors {
     namespace arithmetic {
         // The following selectors generate a tree of nodes of type ast::arithmetic
 
-        struct arithmetic_value : parse_tree::apply<arithmetic_value> {
-            template <typename Node, typename... States>
-            static void transform(unique_ptr<Node>& n, States&&... st) {
+        struct arithmetic_value : generic_selector<arithmetic_value> {
+            template <typename Node>
+            static void transform(unique_ptr<Node>& n) {
                 auto& child = n->children[0];
                 auto& child_data = n->children[0]->data;
 
@@ -456,9 +492,9 @@ namespace selectors {
         };
         using negated_sel = typename selector<negated, ast::negated>::on<rules::negated>;
 
-        struct logical_value : parse_tree::apply<logical_value> {
-            template <typename Node, typename... States>
-            static void transform(unique_ptr<Node>& n, States&&... st) {
+        struct logical_value : generic_selector<logical_value> {
+            template <typename Node>
+            static void transform(unique_ptr<Node>& n) {
                 auto& child = n->children[0];
                 auto& child_data = n->children[0]->data;
 
@@ -568,11 +604,9 @@ namespace selectors {
     };
     using always_body_sel = typename selector<always_body, ast::always_body>::on<rules::always_body>;
 
-    struct program : parse_tree::apply<program> {
-        static unique_ptr<ast::program> program_ast;
-
-        template <typename Node, typename... States>
-        static void transform(unique_ptr<Node>& n, States&&... st) {
+    struct program : generic_selector<program> {
+        template <typename Node>
+        static void transform(unique_ptr<Node>& n) {
             auto data = make_unique<ast::program>();
             for (auto& child : n->children) {
                 set_parent(data, child->data);
@@ -586,10 +620,9 @@ namespace selectors {
                 }
             }
 
-            program_ast = std::move(data);
+            n->data = std::move(data);
         }
     };
-    unique_ptr<ast::program> program::program_ast;
     using program_sel = typename program::on<rules::program>;
 
     using namespace arithmetic;
@@ -624,8 +657,11 @@ auto parser::run() -> unique_ptr<ast::program> {
     std::stringstream buffer;
     buffer << file.rdbuf();
 
-    auto const root = parse_tree::parse<rules::program, ast_node, selectors::ast_selector>(string_input(buffer.str(), ""));
+    input = make_unique<string_input<>>(buffer.str(), "");
+    line_to_file[0] = input_file;
+
+    auto const root = parse_tree::parse<rules::program, ast_node, selectors::ast_selector>(*input);
     DEBUG(parse_tree::print_dot(std::cout, *root));
 
-    return std::move(selectors::program::program_ast);
+    return std::move(program_ast);
 }

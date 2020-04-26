@@ -1,29 +1,35 @@
 trait T1 {
-	properties {
-		var_T1 : bool
-	}
+    properties {
+        var_T1 : bool
+    }
 
-	always {}
+    always {}
 }
 
 trait T2 {
-	properties {
-		var_T2: bool
-	}
+    properties {
+        var_T2: bool
+    }
 
-	always {}
+    always {}
 }
 
 trait Test {
-	properties {
-		var1 : int<0, 5>
-	}
+    properties {
+        var1 : int<0, 5>
+    }
 
-	always {
-		for blah in range of this with trait Test, T2, T1, T1 {
-			blah.var_T1 = 5;
-		}
-	}
+    always {
+        for a in range of this with trait T1 {
+            for b in range of a with trait T2 {
+                for c in range of b with trait Test {
+                    a.var_T1 = 5;
+                    b.var_T1 = 5;
+                    c.var1 = 5;
+                }
+            }
+        }
+    }
 }
 
 unit test : Test;
