@@ -114,7 +114,10 @@ namespace rules {
     struct properties : sseq<kw_properties, one<'{'>, opt<cslist<variable_decl>>, one<'}'>> {};
     struct always : sseq<kw_always, one<'{'>, always_body, one<'}'>> {};
     struct trait : sseq<kw_trait, identifier, one<'{'>, properties, always, one<'}'>> {};
-    struct unit_traits : sseq<kw_unit, identifier, one<':'>, plus<identifier>, one<';'>> {};
+
+    struct trait_property_init : sseq<identifier, one<'='>, sor<val_bool, val_float, val_int>> {};
+    struct trait_initializer : sseq<identifier, opt<one<'('>, cslist<trait_property_init>, one<')'>>> {};
+    struct unit_traits : sseq<kw_unit, identifier, one<':'>, cslist<trait_initializer>, one<';'>> {};
 
     /*** Root node ***/
     struct program : sseq<sstar<sor<trait, unit_traits>>, eof> {};
@@ -146,15 +149,6 @@ namespace selectors {
     template <typename Target, typename Source>
     auto own_as(unique_ptr<Source>& src) -> unique_ptr<Target> {
         return unique_ptr<Target>(static_cast<Target*>(src.release()));
-    }
-
-    // Sets the parent of the child nodes to point to the provided parent node
-    // U, T, and Rest... should all be pointer-like objects to ast::node
-    template <typename U> void set_parent(U& parent) {}
-    template <typename U, typename T, typename... Rest>
-    void set_parent(U& parent, T& child, Rest&... rest) {
-        child->parent() = static_cast<ast::node*>(&*parent);
-        set_parent(parent, rest...);
     }
 
     namespace utility {
@@ -227,7 +221,7 @@ namespace selectors {
 
     struct val_int {
         static void apply(ast_node& n, ast::val_int *data) {
-            data->value = std::stoi(n.string());
+            data->value = std::stol(n.string());
         }
     };
     using val_int_sel = typename selector<val_int, ast::val_int>::on<rules::val_int>;
@@ -267,7 +261,7 @@ namespace selectors {
         static void apply(ast_node& n, ast::variable_decl *data) {
             data->name = n.children[0]->string();
             data->type = own_as<ast::variable_type>(n.children[1]->data);
-            set_parent(data, data->type);
+            ast::set_parent(data, data->type);
         };
     };
     using variable_decl_sel = typename selector<variable_decl, ast::variable_decl>::on<rules::variable_decl>;
@@ -275,7 +269,7 @@ namespace selectors {
     struct properties {
         static void apply(ast_node& n, ast::properties *data) {
             for (auto& child : n.children) {
-                set_parent(data, child->data);
+                ast::set_parent(data, child->data);
                 data->variable_declarations.push_back(own_as<ast::variable_decl>(child->data));
             }
         }
@@ -287,20 +281,10 @@ namespace selectors {
             data->name = n.children[0]->string();
             data->props = own_as<ast::properties>(n.children[1]->data);
             data->body = own_as<ast::always_body>(n.children[2]->data);
-            set_parent(data, data->props, data->body);
+            ast::set_parent(data, data->props, data->body);
         }
     };
     using trait_sel = typename selector<trait, ast::trait>::on<rules::trait>;
-
-    struct unit_traits {
-        static void apply(ast_node& n, ast::unit_traits *data) {
-            data->name = n.children[0]->string();
-            for (unsigned i = 1; i < n.children.size(); i++) {
-                data->traits.push_back(n.children[i]->string());
-            }
-        }
-    };
-    using unit_traits_sel = typename selector<unit_traits, ast::unit_traits>::on<rules::unit_traits>;
 
     auto parse_unit_object(ast_node& n) -> ast::unit_object {
         auto unit = ast::unit_object();
@@ -312,9 +296,7 @@ namespace selectors {
             unit = ast::type_unit();
         }
         else if (n.is_type<identifier>()) {
-            auto id = ast::identifier_unit();
-            id.identifier = n.string();
-            unit = id;
+            unit = ast::identifier_unit(n.string());
         }
         else {
             assert(false && "Provided parse tree node does not contain a unit object");
@@ -389,10 +371,10 @@ namespace selectors {
             auto op = make_unique<Op>();
             op->expr_1 = std::move(expr_1);
             op->expr_2 = std::move(expr_2);
-            set_parent(op, op->expr_1, op->expr_2);
+            ast::set_parent(op, op->expr_1, op->expr_2);
 
             auto wrapper = make_unique<T>();
-            set_parent(wrapper, op);
+            ast::set_parent(wrapper, op);
             wrapper->expr = std::move(op);
             return wrapper;
         }
@@ -419,7 +401,7 @@ namespace selectors {
                 else if (child->template is_type<rules::field>())     arithmetic_val->value = own_as<ast::field>(child_data);
 
                 auto data = make_unique<ast::arithmetic>();
-                set_parent(data, arithmetic_val);
+                ast::set_parent(data, arithmetic_val);
                 data->expr = std::move(arithmetic_val);
                 n->data = std::move(data);
             }
@@ -471,7 +453,7 @@ namespace selectors {
             static void apply(ast_node& n, ast::comparison *data) {
                 data->lhs = own_as<ast::arithmetic>(n.children[0]->data);
                 data->rhs = own_as<ast::arithmetic>(n.children[2]->data);
-                set_parent(data, data->lhs, data->rhs);
+                ast::set_parent(data, data->lhs, data->rhs);
 
                 auto& op = n.children[1];
                 if (op->template is_type<rules::eq_op>()) data->comparison_type = ast::comparison_enum::EQ;
@@ -487,7 +469,7 @@ namespace selectors {
         struct negated {
             static void apply(ast_node& n, ast::negated *data) {
                 data->expr = own_as<ast::logical>(n.children[0]->data);
-                set_parent(data, data->expr);
+                ast::set_parent(data, data->expr);
             };
         };
         using negated_sel = typename selector<negated, ast::negated>::on<rules::negated>;
@@ -507,7 +489,7 @@ namespace selectors {
                 // If the child is not a logical expression already, we must wrap it in one
                 // comparison, val_bool, negated, sseq<one<'('>, logical, one<')'>>, field
                 auto data = make_unique<ast::logical>();
-                set_parent(data, child_data);
+                ast::set_parent(data, child_data);
                 if (child->template is_type<rules::field>())
                     data->expr = own_as<ast::field>(child_data);
                 else if (child->template is_type<rules::val_bool>())
@@ -542,7 +524,7 @@ namespace selectors {
 
     struct assignment {
         static void apply(ast_node& n, ast::assignment *data) {
-            set_parent(data, n.children[0]->data, n.children[1]->data);
+            ast::set_parent(data, n.children[0]->data, n.children[1]->data);
 
             data->lhs = own_as<ast::field>(n.children[0]->data);
 
@@ -561,7 +543,7 @@ namespace selectors {
         static void apply(ast_node& n, IfAstType *data) {
             data->condition = own_as<ast::logical>(n.children[0]->data);
             data->body = own_as<ast::always_body>(n.children[1]->data);
-            set_parent(data, data->condition, data->body);
+            ast::set_parent(data, data->condition, data->body);
         }
     };
     using continuous_if_sel = typename selector<if_expr<ast::continuous_if>, ast::continuous_if>::on<rules::continuous_if>;
@@ -578,7 +560,7 @@ namespace selectors {
             }
 
             data->body = own_as<ast::always_body>(n.children.back()->data);
-            set_parent(data, data->body);
+            ast::set_parent(data, data->body);
         }
     };
     using for_in_sel = typename selector<for_in, ast::for_in>::on<rules::for_in>;
@@ -586,7 +568,7 @@ namespace selectors {
     struct always_body {
         static void apply(ast_node& n, ast::always_body *data) {
             for (auto& child : n.children) {
-                set_parent(data, child->data);
+                ast::set_parent(data, child->data);
 
                 if (child->template is_type<rules::assignment>()) {
                     data->exprs.push_back(own_as<ast::assignment>(child->data));
@@ -604,12 +586,44 @@ namespace selectors {
     };
     using always_body_sel = typename selector<always_body, ast::always_body>::on<rules::always_body>;
 
+    struct trait_initializer {
+        static void apply(ast_node& n, ast::trait_initializer *data) {
+            data->name = n.children[0]->string();
+            for (unsigned i = 1; i < n.children.size(); i += 2) {
+                auto property = n.children[i]->string();
+                auto& value_node = n.children[i + 1];
+
+                auto value = ast::literal_value();
+                if (value_node->template is_type<rules::val_bool>())
+                    value = own_as<ast::val_bool>(value_node->data)->value;
+                else if (value_node->template is_type<rules::val_int>())
+                    value = own_as<ast::val_int>(value_node->data)->value;
+                else if (value_node->template is_type<rules::val_float>())
+                    value = own_as<ast::val_float>(value_node->data)->value;
+
+                data->initial_values[property] = value;
+            }
+        }
+    };
+    using trait_initializer_sel = typename selector<trait_initializer, ast::trait_initializer>::on<rules::trait_initializer>;
+
+    struct unit_traits {
+        static void apply(ast_node& n, ast::unit_traits *data) {
+            data->name = n.children[0]->string();
+            for (unsigned i = 1; i < n.children.size(); i++) {
+                ast::set_parent(data, n.children[i]->data);
+                data->traits.push_back(own_as<ast::trait_initializer>(n.children[i]->data));
+            }
+        }
+    };
+    using unit_traits_sel = typename selector<unit_traits, ast::unit_traits>::on<rules::unit_traits>;
+
     struct program : generic_selector<program> {
         template <typename Node>
         static void transform(unique_ptr<Node>& n) {
             auto data = make_unique<ast::program>();
             for (auto& child : n->children) {
-                set_parent(data, child->data);
+                ast::set_parent(data, child->data);
 
                 if (child->template is_type<rules::trait>()) {
                     data->traits.push_back(own_as<ast::trait>(child->data));
@@ -638,7 +652,7 @@ namespace selectors {
         comparison_sel, negated_sel, logical_value_sel, logical_sel, and_factor_sel, or_expr_sel, and_expr_sel,
         assignment_sel, continuous_if_sel, transition_if_sel, for_in_sel,
         always_body_sel,
-        trait_sel, unit_traits_sel, program_sel,
+        trait_sel, unit_traits_sel, trait_initializer_sel, program_sel,
 
         parse_tree::store_content::on<
             identifier,

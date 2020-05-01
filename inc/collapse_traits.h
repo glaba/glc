@@ -14,10 +14,12 @@ public:
 private:
 	// Renames all variables in all traits to be prefixed with the trait name
 	void rename_variables();
-	// Create new trait
-	// Copy all old variables into new trait, and copy all logic into new trait
-	// Transform for in with trait loops to for in loops with a trait check inside
-	// Copy all logic into new trait
+
+	// Creates a new trait with field(s) "trait_bitfield#" indicating which original trait is applicable
+	// Copies all the old variables and logic into the new trait, transforming trait
+	//  checks in for_in loops to if statements that check trait_bitfield
+	// Removes the old traits on completion
+	void create_collapsed_trait();
 
 	pass_manager& pm;
 	ast::program& program;

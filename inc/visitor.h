@@ -168,6 +168,15 @@ struct visit<ast::trait, Visitor> : default_visit<ast::trait, Visitor, visit<ast
 };
 
 template <typename Visitor>
+struct visit<ast::unit_traits, Visitor> : default_visit<ast::unit_traits, Visitor, visit<ast::unit_traits, Visitor>> {
+	static void visit_children(ast::unit_traits& n, Visitor& visitor) {
+		for (auto& trait_init : n.traits) {
+			visit<ast::trait_initializer, Visitor>()(*trait_init, visitor);
+		}
+	}
+};
+
+template <typename Visitor>
 struct visit<ast::program, Visitor> : default_visit<ast::program, Visitor, visit<ast::program, Visitor>> {
 	static void visit_children(ast::program& n, Visitor& visitor) {
 		for (auto& trait : n.traits) {

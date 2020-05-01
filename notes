@@ -3,6 +3,7 @@ Notes:
 Process to follow when adding a new expression to the parser:
 	Create the rule
 	Create the corresponding AST type, inheriting from node_impl using CRTP
+	Add a static function make() to the AST type that creates an unique_ptr to the type
 	Create a selector for the rule and add the selector to the list of selectors
 		If the rule has children, set their parent to point to the current AST node
 	Create a visitor for the AST node if it has children

@@ -24,7 +24,7 @@ trait Test {
             for b in range of a with trait T2 {
                 for c in range of b with trait Test {
                     a.var_T1 = 5;
-                    b.var_T1 = 5;
+                    b.var_T2 = 5;
                     c.var1 = 5;
                 }
             }
@@ -32,4 +32,4 @@ trait Test {
     }
 }
 
-unit test : Test;
+unit test : T2(var_T2 = true), Test(var1 = 3), T1;

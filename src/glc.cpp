@@ -27,6 +27,11 @@ int main(int argc, char **argv) {
     parser p(input_file);
     unique_ptr<ast::program> program = p.run();
 
+    if (!program) {
+        std::cout << "Failed to parse program" << std::endl;
+        return 1;
+    }
+
     pass_manager pm(program.get());
     pm.get_pass<collapse_traits>();
     for (auto& error : pm.get_errors<collapse_traits>()) {
