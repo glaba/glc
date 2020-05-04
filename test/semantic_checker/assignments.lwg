@@ -1,0 +1,37 @@
+trait T1 {
+    properties {
+        t1 : bool
+    }
+
+    always {}
+}
+
+trait T2 {
+    properties {
+        t2: int<0, 2>,
+        something: int<0, 1>
+    }
+
+    always {}
+}
+
+trait Test {
+    properties {
+        var1 : int<0, 5>,
+        var2 : bool,
+        var3 : float
+    }
+
+    always {
+        for a in range of this with trait T1 {
+            for b in range of a with trait T2 {
+                for c in range of b with trait Test {
+                    b.t2 = true and a.t1;
+                    c.var1 = (c.var3 + 5) / a.t1;
+                }
+            }
+        }
+    }
+}
+
+unit test : Test;

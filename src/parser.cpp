@@ -11,12 +11,14 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <tuple>
 
 using namespace tao::pegtl;
 using std::unique_ptr;
 using std::make_unique;
 using std::vector;
 using std::map;
+using std::tuple;
 
 /*** Convenience types ***/
 template <typename... Ts>
@@ -101,7 +103,7 @@ namespace rules {
 
     /*** Always body and expressions ***/
     struct always_body;
-    struct assignment : sseq<field, one<'='>, arithmetic, one<';'>> {};
+    struct assignment : sseq<field, one<'='>, sor<arithmetic, logical>, one<';'>> {};
     struct continuous_if : sseq<kw_if, logical, one<'{'>, always_body, one<'}'>> {};
     struct transition_if : sseq<kw_if, kw_becomes, logical, one<'{'>, always_body, one<'}'>> {};
     struct for_in : sseq<kw_for, identifier, kw_in_range_of, unit_object,
@@ -134,6 +136,12 @@ struct ast_node : parse_tree::node {
     vector<unique_ptr<ast_node>> children;
 };
 
+// Pointer to pass manager to report errors
+pass_manager* pm;
+
+// The latest position reached by the parser in case of parsing error
+size_t latest_line, latest_col;
+
 // Stores input to parser that will be used to track line / col numbers
 // Input is created by concatenating all input files together
 unique_ptr<string_input<>> input;
@@ -152,22 +160,38 @@ namespace selectors {
     }
 
     namespace utility {
+        static auto get_pos_in_file(size_t line_number) -> tuple<std::string, size_t> {
+            auto result_file = std::string();
+            auto result_line = 0UL;
+            for (auto& [line, filename] : line_to_file) {
+                if (line_number >= line) {
+                    result_file = filename;
+                    result_line = line_number - line;
+                }
+            }
+            return {result_file, result_line};
+        }
+
+        // Add tracking info of filename, line number, and column to the given AST node
+        template <typename AstNode>
+        static void add_tracking(AstNode& n) {
+            // Find the filename and its start line
+            auto const& [filename, line] = get_pos_in_file(input->line());
+            n.filename() = filename;
+            n.line() = line;
+            n.col() = input->byte_in_line() + 1;
+        }
+
         // Base selector class used by all others that sets line and col number
         // Expects that n->data is set by Impl
         template <typename Impl>
         struct generic_selector : parse_tree::apply<generic_selector<Impl>> {
             template <typename Node, typename... States>
             static void transform(unique_ptr<Node>& n, States&&... st) {
-                Impl::transform(n);
-                n->data->col() = input->byte_in_line();
+                latest_line = input->line();
+                latest_col = input->byte_in_line() + 1;
 
-                // Find the filename and its start line
-                for (auto& [line, filename] : line_to_file) {
-                    if (input->line() >= line) {
-                        n->data->line() = input->line() - line;
-                        n->data->filename() = filename;
-                    }
-                }
+                Impl::transform(n);
 
                 if (n->data->get_id() == ast::program::id()) {
                     program_ast = own_as<ast::program>(n->data);
@@ -181,6 +205,8 @@ namespace selectors {
             template <typename Node>
             static void transform(unique_ptr<Node>& n) {
                 auto data = make_unique<ASTNodeType>();
+                add_tracking(*data);
+
                 Impl::apply(*n.get(), data.get());
                 n->data = std::move(data);
             }
@@ -214,14 +240,22 @@ namespace selectors {
 
     struct val_float {
         static void apply(ast_node& n, ast::val_float *data) {
-            data->value = std::stod(n.string());
+            try {
+                data->value = std::stod(n.string());
+            } catch (...) {
+                pm->error<parser>(*data, "Float value " + n.string() + " is out of bounds");
+            }
         }
     };
     using val_float_sel = typename selector<val_float, ast::val_float>::on<rules::val_float>;
 
     struct val_int {
         static void apply(ast_node& n, ast::val_int *data) {
-            data->value = std::stol(n.string());
+            try {
+                data->value = std::stol(n.string());
+            } catch (...) {
+                pm->error<parser>(*data, "Integer value " + n.string() + " is out of bounds");
+            }
         }
     };
     using val_int_sel = typename selector<val_int, ast::val_int>::on<rules::val_int>;
@@ -369,11 +403,19 @@ namespace selectors {
         template <typename Op>
         static auto construct_op(unique_ptr<T>&& expr_1, unique_ptr<T>&& expr_2) -> unique_ptr<T> {
             auto op = make_unique<Op>();
+            op->col() = expr_2->col();
+            op->line() = expr_2->line();
+            op->filename() = expr_2->filename();
+
             op->expr_1 = std::move(expr_1);
             op->expr_2 = std::move(expr_2);
             ast::set_parent(op, op->expr_1, op->expr_2);
 
             auto wrapper = make_unique<T>();
+            wrapper->col() = op->col();
+            wrapper->line() = op->line();
+            wrapper->filename() = op->filename();
+
             ast::set_parent(wrapper, op);
             wrapper->expr = std::move(op);
             return wrapper;
@@ -396,14 +438,17 @@ namespace selectors {
 
                 // If the child is not an arithmetic expression already, we must wrap it in an arithmetic_value object
                 auto arithmetic_val = make_unique<ast::arithmetic_value>();
+                ast::set_parent(arithmetic_val, child_data);
                 if (child->template is_type<rules::val_int>())        arithmetic_val->value = own_as<ast::val_int>(child_data)->value;
                 else if (child->template is_type<rules::val_float>()) arithmetic_val->value = own_as<ast::val_float>(child_data)->value;
                 else if (child->template is_type<rules::field>())     arithmetic_val->value = own_as<ast::field>(child_data);
+                add_tracking(*arithmetic_val);
 
                 auto data = make_unique<ast::arithmetic>();
                 ast::set_parent(data, arithmetic_val);
                 data->expr = std::move(arithmetic_val);
                 n->data = std::move(data);
+                add_tracking(*n->data);
             }
         };
         using arithmetic_value_sel = typename arithmetic_value::on<rules::arithmetic_value>;
@@ -500,6 +545,7 @@ namespace selectors {
                     data->expr = own_as<ast::negated>(child_data);
 
                 n->data = std::move(data);
+                add_tracking(*n->data);
             }
         };
         using logical_value_sel = typename logical_value::on<rules::logical_value>;
@@ -635,6 +681,7 @@ namespace selectors {
             }
 
             n->data = std::move(data);
+            add_tracking(*n->data);
         }
     };
     using program_sel = typename program::on<rules::program>;
@@ -664,7 +711,11 @@ namespace selectors {
     >;
 };
 
-auto parser::run() -> unique_ptr<ast::program> {
+parser::parser(pass_manager& pm, std::string input_file) {
+    ::pm = &pm;
+    latest_line = 1;
+    latest_col = 1;
+
     assert(analyze<rules::program>() == 0);
 
     std::ifstream file(input_file);
@@ -677,5 +728,9 @@ auto parser::run() -> unique_ptr<ast::program> {
     auto const root = parse_tree::parse<rules::program, ast_node, selectors::ast_selector>(*input);
     DEBUG(parse_tree::print_dot(std::cout, *root));
 
-    return std::move(program_ast);
+    program = std::move(program_ast);
+    if (!program) {
+        auto const& [filename, line] = selectors::utility::get_pos_in_file(latest_line);
+        pm.error<parser>(filename + ":" + std::to_string(line) + ":" + std::to_string(latest_col) + ": Syntax error: parsing failed");
+    }
 }

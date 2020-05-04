@@ -7,8 +7,11 @@ Process to follow when adding a new expression to the parser:
 	Create a selector for the rule and add the selector to the list of selectors
 		If the rule has children, set their parent to point to the current AST node
 	Create a visitor for the AST node if it has children
+	Add a visitor to the semantic checker if necessary
+	Check if the new rule breaks any assumptions made by other code
+	Add checks for semantic validity in semantic_checker.cpp
 
-Fields of units that can be used freely and related notes:
+Fields of units that can be used freely:
 	startHp
 	startMana
 	supplyProvided

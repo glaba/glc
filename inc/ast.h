@@ -87,6 +87,12 @@ namespace ast {
         set_parent(parent, rest...);
     }
 
+    // Forward declarations of AST types
+    struct arithmetic;
+    struct for_in;
+    struct trait;
+    struct program;
+
 	template <typename Impl, typename T>
 	struct val_T : node_impl<Impl> {
 		T value;
@@ -118,6 +124,8 @@ namespace ast {
 		long min, max;
 
 		static auto make(type_enum type, long min, long max) -> unique_ptr<variable_type>;
+		auto is_arithmetic() -> bool;
+		auto is_logical() -> bool;
 	};
 
 	struct variable_decl : node_impl<variable_decl> {
@@ -148,9 +156,13 @@ namespace ast {
 		string field_name;
 
 		static auto make(unit_object unit, member_op_enum member_op, string field_name) -> unique_ptr<field>;
+		auto get_type() -> variable_type*;
+		// If the unit_object has type identifier_unit, returns the loop where the unit object was declared
+		auto get_loop_from_identifier() -> for_in*;
+		// If the field is of the form <valid unit object>.<field_name>, returns the trait that the field_name belongs to
+		auto get_trait() -> trait*;
 	};
 
-	struct arithmetic;
 	template <typename Impl>
 	struct arithmetic_op : node_impl<Impl> {
 		unique_ptr<arithmetic> expr_1, expr_2;
@@ -259,6 +271,8 @@ namespace ast {
 
 		static auto make(string variable, unit_object range_unit, vector<string>& traits,
 			unique_ptr<always_body>&& body) -> unique_ptr<for_in>;
+		// Returns the loop the range_unit was declared in if the unit is an identifier_unit
+		auto get_loop_from_identifier() -> for_in*;
 	};
 
 	using expression = variant<unique_ptr<assignment>, unique_ptr<continuous_if>, unique_ptr<transition_if>, unique_ptr<for_in>>;
@@ -274,6 +288,7 @@ namespace ast {
 		unique_ptr<always_body> body;
 
 		static auto make(string name, unique_ptr<properties>&& props, unique_ptr<always_body>&& body) -> unique_ptr<trait>;
+		auto get_property(string name) -> variable_decl*;
 	};
 
 	struct trait_initializer : node_impl<trait_initializer> {
@@ -295,6 +310,8 @@ namespace ast {
 		vector<unique_ptr<unit_traits>> all_unit_traits;
 
 		static auto make(vector<unique_ptr<trait>>&& traits, vector<unique_ptr<unit_traits>>&& all_unit_traits) -> unique_ptr<program>;
+
+		auto get_trait(string name) -> trait*;
 	};
 
 	template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };

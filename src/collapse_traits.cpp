@@ -1,4 +1,5 @@
 #include "collapse_traits.h"
+#include "parser.h"
 #include "visitor.h"
 
 #include <iostream>
@@ -16,8 +17,8 @@ using std::make_unique;
 using std::map;
 using std::tuple;
 
-collapse_traits::collapse_traits(pass_manager& pm, ast::program& program)
-	: pm(pm), program(program)
+collapse_traits::collapse_traits(pass_manager& pm)
+	: pm(pm), program(*pm.get_pass<parser>()->program)
 {
 	rename_variables();
 	create_collapsed_trait();
@@ -37,45 +38,20 @@ struct rename_variable_uses_visitor {
 			return;
 		}
 
-		if (std::holds_alternative<ast::identifier_unit>(f.unit)) {
-			auto identifier = std::get<ast::identifier_unit>(f.unit).identifier;
-
-			// Follow parent pointers until we find the for_in loop where the identifier was declared
-			auto parent = ast::find_parent<ast::for_in>(f, [&] (ast::for_in& loop) { return loop.variable == identifier; });
-
-			if (!parent) {
-				pm.error<collapse_traits>(f, "Undeclared identifier " + identifier);
-				return;
+		std::visit(ast::overloaded {
+			[&] (ast::this_unit& _) {
+				auto cur_trait = ast::find_parent<ast::trait>(f);
+				f.field_name = "_" + cur_trait->name + "_" + f.field_name;
+			},
+			[&] (ast::type_unit& _) {
+				assert(false);
+			},
+			[&] (ast::identifier_unit& _) {
+				auto origin_trait = f.get_trait()->name;
+				assert(!origin_trait.empty());
+				f.field_name = "_" + origin_trait + "_" + f.field_name;
 			}
-
-			auto& traits = static_cast<ast::for_in*>(parent)->traits;
-
-			// Find out which trait the field name came from by visiting all variable declarations
-			auto trait = string();
-			auto decl_visitor = [&] (ast::variable_decl& decl) {
-				if (decl.name == f.field_name) {
-					// Find the trait corresponding to this declaration
-					auto trait_node = ast::find_parent<ast::trait>(decl);
-					assert(trait_node != nullptr);
-					if (std::find(traits.begin(), traits.end(), trait_node->name) != traits.end()) {
-						trait = trait_node->name;
-					}
-				}
-			};
-			visit<ast::program, decltype(decl_visitor)>()(program, decl_visitor);
-
-			if (trait == "") {
-				pm.error<collapse_traits>(f, "Field " + f.field_name + " not a member of any specified trait");
-			} else {
-				f.field_name = "_" + trait + "_" + f.field_name;
-			}
-		} else if (std::holds_alternative<ast::this_unit>(f.unit)) {
-			f.field_name = "_" + trait_name + "_" + f.field_name;
-		} else {
-			// This unit is type, which means that none of its field names should be changed,
-			//  since any field should only be referring to built-in or language properties
-			pm.error<collapse_traits>(f, "Cannot access custom properties of special unit object 'type'");
-		}
+		}, f.unit);
 	}
 
 	void operator()(ast::trait_initializer& t) {
@@ -233,7 +209,4 @@ void collapse_traits::create_collapsed_trait() {
 		cur_unit_traits->traits.clear();
 		cur_unit_traits->traits.push_back(std::move(main_trait_initializer));
 	}
-	int a = 5;
 }
-
-register_pass<collapse_traits> register_collapse_traits;

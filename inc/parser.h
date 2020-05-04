@@ -1,18 +1,14 @@
 #pragma once
 
 #include "ast.h"
+#include "pass_manager.h"
 
 #include <string>
 #include <memory>
 
-class parser {
+class parser : public pass {
 public:
-	parser(std::string input_file)
-		: input_file(input_file) {}
+	parser(pass_manager& pm, std::string input_file);
 
-	// Should only be called once at a time
-	auto run() -> std::unique_ptr<ast::program>;
-
-private:
-	std::string input_file;
+	std::unique_ptr<ast::program> program;
 };

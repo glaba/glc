@@ -9,7 +9,7 @@
 // that applies to all units that leads to the same functionality
 class collapse_traits : public pass {
 public:
-	collapse_traits(pass_manager& pm, ast::program& program);
+	collapse_traits(pass_manager& pm);
 
 private:
 	// Renames all variables in all traits to be prefixed with the trait name

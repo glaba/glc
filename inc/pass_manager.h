@@ -8,6 +8,7 @@
 #include <functional>
 #include <cassert>
 #include <vector>
+#include <iostream>
 
 class pass {
 public:
@@ -16,23 +17,27 @@ public:
 
 class pass_manager {
 public:
-	pass_manager(ast::program *program) : program(program) {}
-
 	// Returns the pass in case of success, and nullptr in case of an error
 	template <typename Pass, typename... Params>
-	Pass *get_pass(Params... args) {
+	Pass *run_pass(Params... args) {
 		size_t id = typeid(Pass).hash_code();
 
 		if (passes.find(id) == passes.end()) {
-			assert(pass_factories.find(id) != pass_factories.end() && "Pass not found");
-			passes[id] = pass_factories[id](*this, *program, args...);
+			passes[id] = std::unique_ptr<pass>(std::make_unique<Pass>(*this, args...).release());
 		}
 
 		if (errors.find(id) == errors.end()) {
 			return static_cast<Pass*>(passes[id].get());
 		} else {
-			return nullptr;
+		    throw get_errors<Pass>();
 		}
+	}
+
+	template <typename Pass>
+	Pass *get_pass() {
+		size_t id = typeid(Pass).hash_code();
+		assert(passes.find(id) != passes.end());
+		return static_cast<Pass*>(passes[id].get());
 	}
 
 	template <typename Pass>
@@ -42,30 +47,16 @@ public:
 	}
 
 	template <typename Pass>
+	void error(std::string const& err) {
+		errors[typeid(Pass).hash_code()].push_back(err);
+	}
+
+	template <typename Pass>
 	auto get_errors() -> std::vector<std::string>& {
 		return errors[typeid(Pass).hash_code()];
 	}
 
 private:
 	std::map<size_t, std::vector<std::string>> errors;
-	ast::program *program;
 	std::map<size_t, std::unique_ptr<pass>> passes;
-
-	static std::map<size_t, std::function<std::unique_ptr<pass>(pass_manager&, ast::program&)>> pass_factories;
-
-	template <typename Pass>
-	friend class register_pass;
-};
-
-template <typename Pass>
-class register_pass {
-public:
-	register_pass() {
-		size_t id = typeid(Pass).hash_code();
-
-		pass_manager::pass_factories[id] = [=] (pass_manager& pm, ast::program& program) {
-			auto pass_inst = std::make_unique<Pass>(pm, program);
-			return std::unique_ptr<pass>(static_cast<pass*>(pass_inst.release()));
-		};
-	}
 };

@@ -2,6 +2,7 @@
 #include "visitor.h"
 
 #include <iostream>
+#include <algorithm>
 
 namespace ast {
 	auto ty_int::make(long min, long max) -> unique_ptr<ty_int> {
@@ -17,6 +18,14 @@ namespace ast {
 		result->min = min;
 		result->max = max;
 		return std::move(result);
+	}
+
+	auto variable_type::is_arithmetic() -> bool {
+		return type == type_enum::INT || type == type_enum::FLOAT;
+	}
+
+	auto variable_type::is_logical() -> bool {
+		return type == type_enum::BOOL;
 	}
 
 	auto variable_decl::make(unique_ptr<variable_type>&& type, string name) -> unique_ptr<variable_decl> {
@@ -42,6 +51,49 @@ namespace ast {
 		result->member_op = member_op;
 		result->field_name = field_name;
 		return std::move(result);
+	}
+
+	auto field::get_type() -> variable_type* {
+		if (member_op != member_op_enum::CUSTOM) {
+			// TODO: add checks for non-custom properties
+			assert(false);
+		}
+
+		auto unit_trait = get_trait();
+		if (!unit_trait) {
+			return nullptr;
+		} else {
+			return unit_trait->get_property(field_name)->type.get();
+		}
+	}
+
+	auto field::get_loop_from_identifier() -> for_in* {
+		auto& identifier = std::get<identifier_unit>(unit).identifier;
+		return find_parent<for_in>(*this, [&] (for_in& loop) { return loop.variable == identifier; });
+	}
+
+	auto field::get_trait() -> trait* {
+		if (!std::holds_alternative<identifier_unit>(unit)) {
+			return find_parent<trait>(*this);
+		}
+
+		auto& p = *find_parent<program>(*this);
+		auto loop = get_loop_from_identifier();
+		auto& trait_candidates = loop->traits;
+
+		auto result = static_cast<trait*>(nullptr);
+		auto decl_visitor = [&] (variable_decl& decl) {
+			if (decl.name == field_name) {
+				// Find the trait corresponding to this declaration
+				auto trait_node = find_parent<trait>(decl);
+				assert(trait_node != nullptr);
+				if (std::find(trait_candidates.begin(), trait_candidates.end(), trait_node->name) != trait_candidates.end()) {
+					result = trait_node;
+				}
+			}
+		};
+		visit<program, decltype(decl_visitor)>()(p, decl_visitor);
+		return result;
 	}
 
 	auto arithmetic_value::make(variant<unique_ptr<field>, long, double>&& value) -> unique_ptr<arithmetic_value> {
@@ -120,6 +172,11 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto for_in::get_loop_from_identifier() -> for_in* {
+		auto identifier = std::get<identifier_unit>(range_unit).identifier;
+		return find_parent<for_in>(*this->parent(), [&] (for_in& loop) { return loop.variable == identifier; });
+	}
+
 	auto always_body::make(vector<expression>&& exprs) -> unique_ptr<always_body> {
 		auto result = make_unique<always_body>();
 		result->exprs = std::move(exprs);
@@ -136,6 +193,15 @@ namespace ast {
 		result->body = std::move(body);
 		set_parent(result, result->props, result->body);
 		return std::move(result);
+	}
+
+	auto trait::get_property(string name) -> variable_decl* {
+		for (auto& prop : props->variable_declarations) {
+			if (prop->name == name) {
+				return prop.get();
+			}
+		}
+		return nullptr;
 	}
 
 	auto trait_initializer::make(string name, map<string, literal_value> initial_values) -> unique_ptr<trait_initializer> {
@@ -166,6 +232,15 @@ namespace ast {
 			set_parent(result, single_unit_traits);
 		}
 		return std::move(result);
+	}
+
+	auto program::get_trait(string name) -> trait* {
+		for (auto& trait : traits) {
+			if (trait->name == name) {
+				return trait.get();
+			}
+		}
+		return nullptr;
 	}
 
 	string print_arithmetic(arithmetic& root) {
