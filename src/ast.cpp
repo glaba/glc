@@ -149,7 +149,11 @@ namespace ast {
 			{"drawOffsetY", variable_type::make_value(type_enum::FLOAT, 0, 0)},
 			{"acceleration", variable_type::make_value(type_enum::FLOAT, 0, 0)},
 			{"angularVelocity", variable_type::make_value(type_enum::FLOAT, 0, 0)},
-			{"goldReward", variable_type::make_value(type_enum::INT, 0, 999999)}
+			{"goldReward", variable_type::make_value(type_enum::INT, 0, 999999)},
+			{"controllable", variable_type::make_value(type_enum::BOOL, 0, 0)},
+			{"hasDetection", variable_type::make_value(type_enum::BOOL, 0, 0)},
+			{"noShow", variable_type::make_value(type_enum::BOOL, 0, 0)},
+			{"isInvisible", variable_type::make_value(type_enum::BOOL, 0, 0)}
 		};
 		return result;
 	}

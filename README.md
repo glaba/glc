@@ -57,6 +57,10 @@ The following are the fields can be accessed using the :: operator (built-in fie
 - acceleration : float
 - angularVelocity : float
 - goldReward : int<0, 999999>
+- controllable : bool
+- hasDetection : bool
+- noShow : bool
+- isInvisible : bool
 
 **Applying traits to units / buildings**  
 unit / building (unit / building name) : (list of traits applying to unit / building)
