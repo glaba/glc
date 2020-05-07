@@ -85,6 +85,28 @@ void collapse_traits::rename_variables() {
 	}
 }
 
+// Returns a comparison that evaluates true when the provided unit object has the specified trait
+auto get_trait_check(ast::unit_object const& unit, map<string, tuple<string, unsigned>>& trait_bitfield, string const& trait)
+	-> unique_ptr<ast::comparison>
+{
+	using namespace ast;
+
+	auto &[bitfield_name, bitposition] = trait_bitfield[trait];
+
+	// Create this expression: <uni>.<bitfield_name> % <2^(bitposition+1)> >= <2^bitposition>
+	// <unit>.<bitfield_name>
+	auto mod_lhs = arithmetic::from_value(
+		field::make(unit, member_op_enum::CUSTOM, bitfield_name));
+	// <2^(bitposition+1)>
+	auto mod_rhs = arithmetic::from_value(1L << (bitposition + 1));
+	// <unit>.<bitfield_name> % <2^(bitposition+1)>
+	auto mod_expr = arithmetic::make(mod::make(std::move(mod_lhs), std::move(mod_rhs)));
+	// <2^bitposition>
+	auto comp_rhs = arithmetic::from_value(1L << bitposition);
+	// <unit>.<bitfield_name> % <2^(bitposition+1)> >= <2^bitposition>
+	return comparison::make(std::move(mod_expr), std::move(comp_rhs), comparison_enum::GTE);
+}
+
 struct insert_trait_checks_visitor {
 	map<string, tuple<string, unsigned>>& trait_bitfield;
 
@@ -98,52 +120,35 @@ struct insert_trait_checks_visitor {
 
 		// Create the condition that checks for all the traits
 		for (auto &trait : loop.traits) {
-			auto &[bitfield_name, bitposition] = trait_bitfield[trait];
-
 			// Generate a tree corresponding to the following expression
-			//   if (<loop.variable>.<bitfield_name> % <2^(bitposition+1)> >= <2^bitposition>) {
+			//   if (<loop variable has trait>) {
 			//       <original body of for_in>
 			//   }
 			// where the expressions in <> are inserted as constant values into the AST
 			using namespace ast;
 
-			// <loop.variable>.<bitfield_name>
-			auto mod_lhs = arithmetic::from_value(
-				field::make(identifier_unit(loop.variable), member_op_enum::CUSTOM, bitfield_name));
-			// <2^(bitposition+1)>
-			auto mod_rhs = arithmetic::from_value(1L << (bitposition + 1));
-			// <loop.variable>.<bitfield_name> % <2^(bitposition+1)>
-			auto mod_expr = arithmetic::make(mod::make(std::move(mod_lhs), std::move(mod_rhs)));
-			// <2^bitposition>
-			auto comp_rhs = arithmetic::from_value(1L << bitposition);
-			// <loop.variable>.<bitfield_name> % <2^(bitposition+1)> >= <2^bitposition>
-			auto comp_expr = comparison::make(std::move(mod_expr), std::move(comp_rhs), comparison_enum::GTE);
+			auto comp_expr = get_trait_check(identifier_unit(loop.variable), trait_bitfield, trait);
 			// if (<loop.variable>.<bitfield_name> % <2^(bitposition+1)> >= <2^bitposition>) { <original body> }
 			auto if_stmt = continuous_if::make(logical::make(std::move(comp_expr)), std::move(loop.body));
 
-			auto new_loop_body = make_unique<always_body>();
-			new_loop_body->exprs.emplace_back(std::move(if_stmt));
-			loop.body = std::move(new_loop_body);
+			auto new_loop_body_exprs = vector<ast::expression>();
+			new_loop_body_exprs.emplace_back(std::move(if_stmt));
+			auto new_loop_body = always_body::make(std::move(new_loop_body_exprs));
+
+			loop.replace_body(std::move(new_loop_body));
 			loop.traits.clear();
-			set_parent(&loop, loop.body);
+			loop.traits.push_back("main");
 		}
 	}
 };
 
 void collapse_traits::create_collapsed_trait() {
-	auto new_trait = make_unique<ast::trait>();
-	new_trait->name = "main";
-	new_trait->props = make_unique<ast::properties>();
-	new_trait->body = make_unique<ast::always_body>();
+	auto new_trait = ast::trait::make("main", make_unique<ast::properties>(), make_unique<ast::always_body>());
 
-	// Copy the variables and logic from the old traits
+	// Copy the variables from the old traits
 	for (auto& trait : program.traits) {
 		for (auto& property : trait->props->variable_declarations) {
-			new_trait->props->variable_declarations.push_back(std::move(property));
-		}
-
-		for (auto& expr : trait->body->exprs) {
-			new_trait->body->exprs.push_back(std::move(expr));
+			new_trait->props->add_decl(std::move(property));
 		}
 	}
 
@@ -155,16 +160,10 @@ void collapse_traits::create_collapsed_trait() {
 			num_bits = program.traits.size() - (num_trait_bitfields - 1) * ast::ty_int::num_bits;
 		}
 
-		auto type = make_unique<ast::variable_type>();
-		type->type = ast::type_enum::INT;
-		type->min = 0;
-		type->max = (1 << num_bits) - 1;
+		auto type = ast::variable_type::make(ast::type_enum::INT, 0, (1 << num_bits) - 1);
+		auto decl = ast::variable_decl::make(std::move(type), "trait_bitfield" + std::to_string(i));
 
-		auto decl = make_unique<ast::variable_decl>();
-		decl->name = "trait_bitfield" + std::to_string(i);
-		decl->type = std::move(type);
-
-		new_trait->props->variable_declarations.push_back(std::move(decl));
+		new_trait->props->add_decl(std::move(decl));
 	}
 
 	// Map from trait name to variable name / bitposition pair
@@ -175,13 +174,25 @@ void collapse_traits::create_collapsed_trait() {
 		trait_bitfield[program.traits[i]->name] = {variable_name, bitposition};
 	}
 
+	// Copy the logic from the old traits
+	for (auto& trait : program.traits) {
+		// Comparison expression checking if 'this' has the trait
+		auto comp_expr = get_trait_check(ast::this_unit(), trait_bitfield, trait->name);
+
+		// if (<'this' has the current trait>) { <original trait body> }
+		auto trait_check = ast::continuous_if::make(ast::logical::make(std::move(comp_expr)), std::move(trait->body));
+
+		// Insert the transformed body into the new trait
+		new_trait->body->insert_expr(std::move(trait_check));
+	}
+
 	// Find all for_in loops and transform trait checks to explicit if statements
 	auto itc = insert_trait_checks_visitor(trait_bitfield);
 	visit<ast::trait, decltype(itc)>()(*new_trait, itc);
 
 	// Remove old traits and insert new trait
 	program.traits.clear();
-	program.traits.push_back(std::move(new_trait));
+	program.insert_trait(std::move(new_trait));
 
 	// Transform initializers for original traits into initializers for new trait
 	for (auto& cur_unit_traits : program.all_unit_traits) {
@@ -207,6 +218,6 @@ void collapse_traits::create_collapsed_trait() {
 		}
 
 		cur_unit_traits->traits.clear();
-		cur_unit_traits->traits.push_back(std::move(main_trait_initializer));
+		cur_unit_traits->insert_initializer(std::move(main_trait_initializer));
 	}
 }

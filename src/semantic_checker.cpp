@@ -97,7 +97,7 @@ struct semantic_checker_visitor {
 			}, n.unit);
 		} else {
 			// TODO: add checks for BUILTIN and LANGUAGE fields
-			assert(false);
+			std::cout << "Semantic checker does not yet support builtin and language fields" << std::endl;
 		}
 	}
 
@@ -159,6 +159,11 @@ struct semantic_checker_visitor {
 			if (!program.get_trait(trait)) {
 				error(n, "Undeclared trait " + quote(trait));
 			}
+		}
+
+		// Check that the range is positive
+		if (n.range < 0) {
+			error(n, "Invalid range " + quote(std::to_string(n.range)) + "; ranges must be positive");
 		}
 	}
 
@@ -227,7 +232,8 @@ struct semantic_checker_visitor {
 };
 
 // Wrapper struct that will skip semantic checks on nodes whose children have semantic errors
-// on the conservative assumption that invalid children cause any analysis on parents to be meaningless
+//  on the conservative assumption that invalid children cause any analysis on parents to be meaningless
+// Additionally, checks that the AST is well formed and all parent pointers are correct
 template <typename Impl>
 struct optionally_skip_checks : Impl {
 	optionally_skip_checks(pass_manager& pm, ast::program& program) : Impl(pm, program) {}
@@ -236,6 +242,10 @@ struct optionally_skip_checks : Impl {
 	void operator()(AstNode& n) {
 		if (Impl::errored_nodes.find(static_cast<ast::node*>(&n)) == Impl::errored_nodes.end()) {
 			Impl::operator()(n);
+		}
+
+		if constexpr (!std::is_same<AstNode, ast::program>::value) {
+			assert(ast::find_parent<ast::program>(n));
 		}
 	}
 };

@@ -45,7 +45,8 @@ namespace rules {
     struct kw_type : TAO_PEGTL_STRING("type") {};
     struct kw_if : TAO_PEGTL_STRING("if") {};
     struct kw_for : TAO_PEGTL_STRING("for") {};
-    struct kw_in_range_of : sseq<TAO_PEGTL_STRING("in"), TAO_PEGTL_STRING("range"), TAO_PEGTL_STRING("of")> {};
+    struct kw_in_range : sseq<TAO_PEGTL_STRING("in"), TAO_PEGTL_STRING("range")> {};
+    struct kw_of : TAO_PEGTL_STRING("of") {};
     struct kw_with_trait : sseq<TAO_PEGTL_STRING("with"), TAO_PEGTL_STRING("trait")> {};
     struct kw_unit : TAO_PEGTL_STRING("unit") {};
     struct kw_becomes : TAO_PEGTL_STRING("becomes") {};
@@ -91,7 +92,7 @@ namespace rules {
     struct gte_op : seq<one<'>'>, one<'='>> {};
     struct lte_op : seq<one<'<'>, one<'='>> {};
 
-    struct comparison : sseq<arithmetic, sor<eq_op, neq_op, gt_op, lt_op, gte_op, lte_op>, arithmetic> {};
+    struct comparison : sseq<arithmetic, sor<eq_op, neq_op, gte_op, lte_op, gt_op, lt_op>, arithmetic> {};
 
     struct logical; struct negated; struct or_expr; struct and_factor; struct and_expr;
     struct logical_value : sor<comparison, val_bool, negated, sseq<one<'('>, logical, one<')'>>, field> {};
@@ -106,7 +107,7 @@ namespace rules {
     struct assignment : sseq<field, one<'='>, sor<arithmetic, logical>, one<';'>> {};
     struct continuous_if : sseq<kw_if, logical, one<'{'>, always_body, one<'}'>> {};
     struct transition_if : sseq<kw_if, kw_becomes, logical, one<'{'>, always_body, one<'}'>> {};
-    struct for_in : sseq<kw_for, identifier, kw_in_range_of, unit_object,
+    struct for_in : sseq<kw_for, identifier, kw_in_range, sor<val_float, val_int>, kw_of, unit_object,
         opt<kw_with_trait, cslist<identifier>>, one<'{'>, always_body, one<'}'>> {};
 
     struct always_body : sstar<sor<assignment, continuous_if, transition_if, for_in>> {};
@@ -389,13 +390,6 @@ namespace selectors {
                 cur_root = Impl::create_op(*op, std::move(expr_1), std::move(expr_2));
             }
 
-            // Print the parsed expression for debugging
-            if constexpr (std::is_same<T, ast::logical>::value) {
-                DEBUG(std::cout << ast::print_logical(*cur_root) << std::endl);
-            } else if constexpr (std::is_same<T, ast::arithmetic>::value) {
-                DEBUG(std::cout << ast::print_arithmetic(*cur_root) << std::endl);
-            }
-
             // Set the final node containing the total "product" as the data for this node in the parse tree
             n->data = std::move(cur_root);
         }
@@ -598,10 +592,16 @@ namespace selectors {
     struct for_in {
         static void apply(ast_node& n, ast::for_in *data) {
             data->variable = n.children[0]->string();
-            data->range_unit = parse_unit_object(*n.children[1]);
+
+            if (n.children[1]->template is_type<rules::val_int>())
+                data->range = own_as<ast::val_int>(n.children[1]->data)->value;
+            else if (n.children[1]->template is_type<rules::val_float>())
+                data->range = own_as<ast::val_float>(n.children[1]->data)->value;
+
+            data->range_unit = parse_unit_object(*n.children[2]);
 
             // Parse the next set of children as required traits as long as they are identifiers
-            for (unsigned i = 2; n.children[i]->template is_type<identifier>(); i++) {
+            for (unsigned i = 3; n.children[i]->template is_type<identifier>(); i++) {
                 data->traits.push_back(n.children[i]->string());
             }
 

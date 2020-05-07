@@ -22,9 +22,7 @@ public:
 	Pass *run_pass(Params... args) {
 		size_t id = typeid(Pass).hash_code();
 
-		if (passes.find(id) == passes.end()) {
-			passes[id] = std::unique_ptr<pass>(std::make_unique<Pass>(*this, args...).release());
-		}
+		passes[id] = std::unique_ptr<pass>(std::make_unique<Pass>(*this, args...).release());
 
 		if (errors.find(id) == errors.end()) {
 			return static_cast<Pass*>(passes[id].get());

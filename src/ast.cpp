@@ -45,6 +45,11 @@ namespace ast {
 		return std::move(result);
 	}
 
+	void properties::add_decl(unique_ptr<variable_decl>&& decl) {
+		set_parent(this, decl);
+		variable_declarations.emplace_back(std::move(decl));
+	}
+
 	auto field::make(unit_object unit, member_op_enum member_op, string field_name) -> unique_ptr<field> {
 		auto result = make_unique<field>();
 		result->unit = unit;
@@ -162,14 +167,20 @@ namespace ast {
 		return std::move(result);
 	}
 
-	auto for_in::make(string variable, unit_object range_unit, vector<string>& traits, unique_ptr<always_body>&& body) -> unique_ptr<for_in> {
+	auto for_in::make(string variable, double range, unit_object range_unit, vector<string>& traits, unique_ptr<always_body>&& body) -> unique_ptr<for_in> {
 		auto result = make_unique<for_in>();
 		result->variable = variable;
+		result->range = range;
 		result->range_unit = range_unit;
 		result->traits = traits;
 		result->body = std::move(body);
 		set_parent(result, result->body);
 		return std::move(result);
+	}
+
+	void for_in::replace_body(unique_ptr<always_body>&& new_body) {
+		set_parent(this, new_body);
+		body = std::move(new_body);
 	}
 
 	auto for_in::get_loop_from_identifier() -> for_in* {
@@ -184,6 +195,11 @@ namespace ast {
 			std::visit([&] (auto& node) { set_parent(result, node); }, expr);
 		}
 		return std::move(result);
+	}
+
+	void always_body::insert_expr(expression&& expr) {
+		std::visit([&] (auto& node) { set_parent(this, node); }, expr);
+		exprs.emplace_back(std::move(expr));
 	}
 
 	auto trait::make(string name, unique_ptr<properties>&& props, unique_ptr<always_body>&& body) -> unique_ptr<trait> {
@@ -221,6 +237,11 @@ namespace ast {
 		return std::move(result);
 	}
 
+	void unit_traits::insert_initializer(unique_ptr<trait_initializer>&& trait) {
+		set_parent(this, trait);
+		traits.emplace_back(std::move(trait));
+	}
+
 	auto program::make(vector<unique_ptr<trait>>&& traits, vector<unique_ptr<unit_traits>>&& all_unit_traits) -> unique_ptr<program> {
 		auto result = make_unique<program>();
 		result->traits = std::move(traits);
@@ -234,6 +255,11 @@ namespace ast {
 		return std::move(result);
 	}
 
+	void program::insert_trait(unique_ptr<trait>&& trait) {
+		set_parent(this, trait);
+		traits.emplace_back(std::move(trait));
+	}
+
 	auto program::get_trait(string name) -> trait* {
 		for (auto& trait : traits) {
 			if (trait->name == name) {
@@ -241,91 +267,5 @@ namespace ast {
 			}
 		}
 		return nullptr;
-	}
-
-	string print_arithmetic(arithmetic& root) {
-		string output;
-		std::visit(overloaded {
-			[&] (unique_ptr<add> const& expr) {output = "(" + print_arithmetic(*expr->expr_1) + "+" + print_arithmetic(*expr->expr_2) + ")";},
-			[&] (unique_ptr<sub> const& expr) {output = "(" + print_arithmetic(*expr->expr_1) + "-" + print_arithmetic(*expr->expr_2) + ")";},
-			[&] (unique_ptr<mul> const& expr) {output = "(" + print_arithmetic(*expr->expr_1) + "*" + print_arithmetic(*expr->expr_2) + ")";},
-			[&] (unique_ptr<div> const& expr) {output = "(" + print_arithmetic(*expr->expr_1) + "/" + print_arithmetic(*expr->expr_2) + ")";},
-			[&] (unique_ptr<mod> const& expr) {output = "(" + print_arithmetic(*expr->expr_1) + "%" + print_arithmetic(*expr->expr_2) + ")";},
-			[&] (unique_ptr<exp> const& expr) {output = "(" + print_arithmetic(*expr->expr_1) + "^" + print_arithmetic(*expr->expr_2) + ")";},
-			[&] (unique_ptr<arithmetic_value> const& expr) {
-				std::visit(overloaded {
-					[&] (long value) {output = std::to_string(value);},
-					[&] (double value) {output = std::to_string(value);},
-					[&] (unique_ptr<field> const& value) {
-						std::visit(overloaded {
-							[&] (this_unit _) {output = "this";},
-							[&] (type_unit _) {output = "type";},
-							[&] (identifier_unit unit) {output = unit.identifier;}
-						}, value->unit);
-						switch (value->member_op) {
-							case member_op_enum::BUILTIN: output += "::"; break;
-							case member_op_enum::CUSTOM: output += "."; break;
-							case member_op_enum::LANGUAGE: output += "->"; break;
-						}
-						output += value->field_name;
-					}
-				}, expr->value);
-			}
-		}, root.expr);
-		return output;
-	}
-
-	string print_logical(logical& root) {
-		string output;
-
-		std::visit(overloaded {
-			[&] (unique_ptr<and_op> const& expr) {output = "(" + print_logical(*expr->expr_1) + " and " + print_logical(*expr->expr_2) + ")";},
-			[&] (unique_ptr<or_op> const& expr) {output = "(" + print_logical(*expr->expr_1) + " or " + print_logical(*expr->expr_2) + ")";},
-			[&] (unique_ptr<val_bool> const& value) {output = value->value ? "true" : "false";},
-			[&] (unique_ptr<comparison> const& value) {
-				output = print_arithmetic(*value->lhs);
-				switch (value->comparison_type) {
-					case comparison_enum::EQ: output += "=="; break;
-					case comparison_enum::NEQ: output += "!="; break;
-					case comparison_enum::GT: output += ">"; break;
-					case comparison_enum::LT: output += "<"; break;
-					case comparison_enum::GTE: output += ">="; break;
-					case comparison_enum::LTE: output += "<="; break;
-				}
-				output += print_arithmetic(*value->rhs);
-			},
-			[&] (unique_ptr<field> const& value) {
-				std::visit(overloaded {
-					[&] (this_unit _) {output = "this";},
-					[&] (type_unit _) {output = "type";},
-					[&] (identifier_unit unit) {output = unit.identifier;}
-				}, value->unit);
-				switch (value->member_op) {
-					case member_op_enum::BUILTIN: output += "::"; break;
-					case member_op_enum::CUSTOM: output += "."; break;
-					case member_op_enum::LANGUAGE: output += "->"; break;
-				}
-				output += value->field_name;
-			},
-			[&] (unique_ptr<negated> const& value) {
-				output = "(not " + print_logical(*value->expr) + ")";
-			}
-		}, root.expr);
-		return output;
-	}
-
-	void print_program(program& root) {
-		auto print_visitor = overloaded {
-			[] (variable_type& n) { std::cout << "variable_type (" << &n << "): " << n.type << ", " << n.min << ", " << n.max << std::endl; },
-			[] (variable_decl& n) { std::cout << "variable_decl (" << &n << "): " << n.name << ", " << n.type.get() << std::endl; },
-			[] (field& n) {
-				std::cout << "field (" << &n << "): ";
-				if (std::holds_alternative<this_unit>(n.unit)) std::cout << "this, ";
-				else if (std::holds_alternative<type_unit>(n.unit)) std::cout << "type, ";
-				else std::cout << std::get<identifier_unit>(n.unit).identifier << ", ";
-				std::cout << n.member_op << ", " << n.field_name << std::endl;
-			}
-		};
-		visit<ast::program, decltype(print_visitor)>()(root, print_visitor);
 	}
 }

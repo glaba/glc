@@ -139,6 +139,7 @@ namespace ast {
 		vector<unique_ptr<variable_decl>> variable_declarations;
 
 		static auto make(vector<unique_ptr<variable_decl>>&& decls) -> unique_ptr<properties>;
+		void add_decl(unique_ptr<variable_decl>&& decl);
 	};
 
 	enum member_op_enum { BUILTIN, CUSTOM, LANGUAGE };
@@ -171,6 +172,7 @@ namespace ast {
 			auto result = make_unique<Impl>();
 			result->expr_1 = std::move(expr_1);
 			result->expr_2 = std::move(expr_2);
+			set_parent(result, result->expr_1, result->expr_2);
 			return std::move(result);
 		}
 	};
@@ -196,9 +198,7 @@ namespace ast {
 		static auto make(arithmetic_expr&& expr) -> unique_ptr<arithmetic>;
 		template <typename V>
 		static auto from_value(V&& value) {
-			auto result = make_unique<arithmetic>();
-			result->expr = arithmetic_value::make(std::move(value));
-			return std::move(result);
+			return make(arithmetic_value::make(std::move(value)));
 		}
 	};
 
@@ -220,6 +220,7 @@ namespace ast {
 			auto result = make_unique<Impl>();
 			result->expr_1 = std::move(expr_1);
 			result->expr_2 = std::move(expr_2);
+			set_parent(result, result->expr_1, result->expr_2);
 			return std::move(result);
 		}
 	};
@@ -265,12 +266,15 @@ namespace ast {
 
 	struct for_in : node_impl<for_in> {
 		string variable;
+		double range;
 		unit_object range_unit;
 		vector<string> traits;
 		unique_ptr<always_body> body;
 
-		static auto make(string variable, unit_object range_unit, vector<string>& traits,
+		static auto make(string variable, double range, unit_object range_unit, vector<string>& traits,
 			unique_ptr<always_body>&& body) -> unique_ptr<for_in>;
+
+		void replace_body(unique_ptr<always_body>&& new_body);
 		// Returns the loop the range_unit was declared in if the unit is an identifier_unit
 		auto get_loop_from_identifier() -> for_in*;
 	};
@@ -280,6 +284,7 @@ namespace ast {
 		vector<expression> exprs;
 
 		static auto make(vector<expression>&& exprs) -> unique_ptr<always_body>;
+		void insert_expr(expression&& expr);
 	};
 
 	struct trait : node_impl<trait> {
@@ -303,6 +308,7 @@ namespace ast {
 		vector<unique_ptr<trait_initializer>> traits;
 
 		static auto make(string name, vector<unique_ptr<trait_initializer>>&& traits) -> unique_ptr<unit_traits>;
+		void insert_initializer(unique_ptr<trait_initializer>&& trait);
 	};
 
 	struct program : node_impl<program> {
@@ -311,6 +317,7 @@ namespace ast {
 
 		static auto make(vector<unique_ptr<trait>>&& traits, vector<unique_ptr<unit_traits>>&& all_unit_traits) -> unique_ptr<program>;
 
+		void insert_trait(unique_ptr<trait>&& trait);
 		auto get_trait(string name) -> trait*;
 	};
 

@@ -3,6 +3,7 @@
 #include "pass_manager.h"
 #include "semantic_checker.h"
 #include "collapse_traits.h"
+#include "print_program.h"
 
 #include <string>
 #include <iostream>
@@ -32,7 +33,11 @@ int main(int argc, char **argv) {
     try {
         pm.run_pass<parser>(input_file);
         pm.run_pass<semantic_checker>();
-        // pm.get_pass<collapse_traits>();
+        pm.run_pass<collapse_traits>();
+        pm.run_pass<print_program>();
+        std::cout << pm.get_pass<print_program>()->get_output() << std::endl;
+        pm.run_pass<semantic_checker>();
+        std::cout << "Compilation succeeded" << std::endl;
     } catch (vector<string>& errors) {
         for (auto& error : errors) {
             std::cout << error << std::endl;
