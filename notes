@@ -12,24 +12,34 @@ Process to follow when adding a new expression to the parser:
 	Add checks for semantic validity in semantic_checker.cpp
 
 Fields of units that can be used freely:
-	startHp
-	startMana
-	supplyProvided
-	size
+	animSpeed
+	bodyPower
+	bounceDistMax
+	bounceDistMin
+	bouncePower
 	buildTime (divide modifier by 20)
+	cargoUse
 	cost
+	dustCreationChance (multiply modifier by 20)
 	healthbarOffset
 	healthbarWidth
-	selectionOffsetY
-	tabPriority
-	potentially the volumes
-	dustCreationChance (multiply modifier by 20)
-	visionHeightBonus
-	oscillationAmplitude
 	height
-	cargoUse
-	projectileStartHeight
+	lifesteal
 	lifetime (divide modifier by 20)
 	limit
+	oscillationAmplitude
+	percDmg
+	power
+	projectileLen
+	projectileStartHeight
+	selectionOffsetY
+	size
+	startHp
+	startMana
+	supply
+	supplyProvided
+	tabPriority
+	vision
+	visionHeightBonus
 
 	All checks for scaled quantities should not be equalities but tight inequalities

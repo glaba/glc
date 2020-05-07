@@ -12,6 +12,14 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto variable_type::make_value(type_enum type, long min, long max) -> variable_type {
+		auto result = variable_type();
+		result.type = type;
+		result.min = min;
+		result.max = max;
+		return result;
+	}
+
 	auto variable_type::make(type_enum type, long min, long max) -> unique_ptr<variable_type> {
 		auto result = make_unique<variable_type>();
 		result->type = type;
@@ -59,16 +67,31 @@ namespace ast {
 	}
 
 	auto field::get_type() -> variable_type* {
-		if (member_op != member_op_enum::CUSTOM) {
-			// TODO: add checks for non-custom properties
-			assert(false);
-		}
-
-		auto unit_trait = get_trait();
-		if (!unit_trait) {
-			return nullptr;
-		} else {
-			return unit_trait->get_property(field_name)->type.get();
+		switch (member_op) {
+			case member_op_enum::BUILTIN: {
+				auto& builtins = get_builtin_fields();
+				if (builtins.find(field_name) == builtins.end()) {
+					return nullptr;
+				} else {
+					return &builtins[field_name];
+				}
+				break;
+			}
+			case member_op_enum::CUSTOM: {
+				auto unit_trait = get_trait();
+				if (!unit_trait) {
+					return nullptr;
+				} else {
+					return unit_trait->get_property(field_name)->type.get();
+				}
+				break;
+			}
+			case member_op_enum::LANGUAGE: {
+				// TODO: check for language properties
+				assert(false);
+				break;
+			}
+			default: assert(false);
 		}
 	}
 
@@ -98,6 +121,36 @@ namespace ast {
 			}
 		};
 		visit<program, decltype(decl_visitor)>()(p, decl_visitor);
+		return result;
+	}
+
+	auto field::get_builtin_fields() -> map<string, variable_type>& {
+		static auto result = map<string, variable_type>{
+			{"hp", variable_type::make_value(type_enum::INT, 1, 99999999)},
+			{"mana", variable_type::make_value(type_enum::INT, 0, 99999999)},
+			{"hpRegenerationRate", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"manaRegenerationRate", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"armor", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"weaponCooldown", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"weaponDelay", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"dmg", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"armorPenetration", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"dmgCap", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"range", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"minRange", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"aoeRadius", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"attackPrio", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"imageScale", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"repairRate", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"repairCost", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"projectileSpeed", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"circleSize", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"circleOffset", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"drawOffsetY", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"acceleration", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"angularVelocity", variable_type::make_value(type_enum::FLOAT, 0, 0)},
+			{"goldReward", variable_type::make_value(type_enum::INT, 0, 999999)}
+		};
 		return result;
 	}
 

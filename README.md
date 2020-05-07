@@ -22,14 +22,46 @@ _for duration_: for (duration): { (body) } OR for (duration): (statement)
 _for in_: for (identifier) in range of (unit) [with trait (list of traits)] { (body) }
 - Evaluates the body for each unit in the specified range that has all the traits given
 
-**Built-in traits**  
+**Language traits**  
 - Mechanical, Undead, Biological, Beast, Human, Flying, UniqueAndHeroic, Building, Unit
 - Type\<unit id, unit id, ...\>: matches only the units with the given IDs
 
-**Built-in fields / functions**  
+**Language fields / functions**  
 - unit->age
 - unit->isAlly(unit), unit->isEnemy(unit), unit->isSelf(unit)
 - unit->displayModifier(name, description, image)
 
+**Built-in fields**  
+The following are the fields can be accessed using the :: operator (built-in field member operator)
+- hp : int<1, 99999999>
+- mana : int<0, 99999999>
+- hpRegenerationRate : float
+- manaRegenerationRate : float
+- armor : float
+- weaponCooldown : float
+- weaponDelay : float
+- dmg : float
+- armorPenetration : float
+- dmgCap : float
+- range : float
+- minRange : float
+- aoeRadius : float
+- attackPrio : float
+- imageScale : float
+- repairRate : float
+- repairCost : float
+- projectileSpeed : float
+- circleSize : float
+- circleOffset : float
+- drawOffsetY : float
+- acceleration : float
+- angularVelocity : float
+- goldReward : int<0, 999999>
+
 **Applying traits to units / buildings**  
 unit / building (unit / building name) : (list of traits applying to unit / building)
+
+**Undefined behavior**  
+- Accessing a custom property of a unit object declared in a for-in loop where the unit object has multiple traits with the same property name
+- Setting the value of a built-in float field to a value that is out of the bounds defined in the editor (the most likely result is that it will just get clipped, but this is not guaranteed)
+- Setting the value of an int field to a float

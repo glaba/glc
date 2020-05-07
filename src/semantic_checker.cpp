@@ -61,43 +61,55 @@ struct semantic_checker_visitor {
 	}
 
 	void operator()(ast::field& n) {
-		if (n.member_op == ast::member_op_enum::CUSTOM) {
-			std::visit(ast::overloaded {
-				[&] (ast::this_unit& _) {
-					// Check that the current trait contains the field
-					auto trait = n.get_trait();
-					auto found_decl = false;
-					for (auto& decl : trait->props->variable_declarations) {
-						if (decl->name == n.field_name) {
-							found_decl = true;
-							break;
+		switch (n.member_op) {
+			case ast::member_op_enum::CUSTOM: {
+				std::visit(ast::overloaded {
+					[&] (ast::this_unit& _) {
+						// Check that the current trait contains the field
+						auto trait = n.get_trait();
+						auto found_decl = false;
+						for (auto& decl : trait->props->variable_declarations) {
+							if (decl->name == n.field_name) {
+								found_decl = true;
+								break;
+							}
+						}
+
+						if (!found_decl) {
+							error(n, "Trait " + quote(trait->name) + " does not contain property " + quote(n.field_name));
+						}
+					},
+					[&] (ast::type_unit& _) {
+						error(n, "Cannot access custom properties of special unit object 'type'");
+					},
+					[&] (ast::identifier_unit& u) {
+						auto loop = n.get_loop_from_identifier();
+
+						if (!loop) {
+							error(n, "Undeclared identifier " + quote(u.identifier));
+							return;
+						}
+
+						if (!n.get_trait()) {
+							error(n, "None of the traits specified for unit object " + quote(u.identifier) +
+								" contain property " + quote(n.field_name));
 						}
 					}
-
-					if (!found_decl) {
-						error(n, "Trait " + quote(trait->name) + " does not contain property " + quote(n.field_name));
-					}
-				},
-				[&] (ast::type_unit& _) {
-					error(n, "Cannot access custom properties of special unit object 'type'");
-				},
-				[&] (ast::identifier_unit& u) {
-					auto loop = n.get_loop_from_identifier();
-
-					if (!loop) {
-						error(n, "Undeclared identifier " + quote(u.identifier));
-						return;
-					}
-
-					if (!n.get_trait()) {
-						error(n, "None of the traits specified for unit object " + quote(u.identifier) +
-							" contain property " + quote(n.field_name));
-					}
+				}, n.unit);
+				break;
+			}
+			case ast::member_op_enum::BUILTIN: {
+				// Check that the field is valid
+				auto& builtins = ast::field::get_builtin_fields();
+				if (builtins.find(n.field_name) == builtins.end()) {
+					error(n, "Invalid built-in field " + quote(n.field_name));
 				}
-			}, n.unit);
-		} else {
-			// TODO: add checks for BUILTIN and LANGUAGE fields
-			std::cout << "Semantic checker does not yet support builtin and language fields" << std::endl;
+				break;
+			}
+			case ast::member_op_enum::LANGUAGE: {
+				std::cout << "Semantic checker does not yet support language fields" << std::endl;
+				break;
+			}
 		}
 	}
 
@@ -128,6 +140,10 @@ struct semantic_checker_visitor {
 	}
 
 	void operator()(ast::assignment& n) {
+		if (std::holds_alternative<ast::type_unit>(n.lhs->unit)) {
+			error(n, "Cannot assign values to special unit object 'type'");
+		}
+
 		auto lhs_type = n.lhs->get_type();
 
 		std::visit(ast::overloaded {

@@ -23,10 +23,10 @@ trait Test {
     }
 
     always {
-        for a in range of this with trait T1 {
-            for b in range of a with trait T2 {
+        for a in range 1 of this with trait T1 {
+            for b in range 1 of a with trait T2 {
             }
-            for b in range of wrong with trait T23 {
+            for b in range 1 of wrong with trait T23 {
             }
         }
     }

@@ -123,6 +123,7 @@ namespace ast {
 		type_enum type;
 		long min, max;
 
+		static auto make_value(type_enum type, long min, long max) -> variable_type;
 		static auto make(type_enum type, long min, long max) -> unique_ptr<variable_type>;
 		auto is_arithmetic() -> bool;
 		auto is_logical() -> bool;
@@ -162,6 +163,9 @@ namespace ast {
 		auto get_loop_from_identifier() -> for_in*;
 		// If the field is of the form <valid unit object>.<field_name>, returns the trait that the field_name belongs to
 		auto get_trait() -> trait*;
+
+		// Returns a map from field name to its type for all the modifiable fields built-in to the game
+		static auto get_builtin_fields() -> map<string, variable_type>&;
 	};
 
 	template <typename Impl>

@@ -6,7 +6,7 @@ trait infection {
 
 	always {
 		if this.infected {
-			this::hpRegenRate = this::hpRegenRate - 4;
+			type::hpRegenerationRate = this::hpRegenerationRate - 4;
 		}
 		if this.infected and this.contagious {
 			for u in range 2 of this with trait infection {
