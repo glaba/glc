@@ -12,6 +12,10 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto ty_int::clone() -> unique_ptr<ty_int> {
+		return make(min, max);
+	}
+
 	auto variable_type::make_value(type_enum type, long min, long max) -> variable_type {
 		auto result = variable_type();
 		result.type = type;
@@ -26,6 +30,10 @@ namespace ast {
 		result->min = min;
 		result->max = max;
 		return std::move(result);
+	}
+
+	auto variable_type::clone() -> unique_ptr<variable_type> {
+		return make(type, min, max);
 	}
 
 	auto variable_type::is_arithmetic() -> bool {
@@ -44,11 +52,23 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto variable_decl::clone() -> unique_ptr<variable_decl> {
+		return make(type->clone(), name);
+	}
+
 	auto properties::make(vector<unique_ptr<variable_decl>>&& decls) -> unique_ptr<properties> {
 		auto result = make_unique<properties>();
 		result->variable_declarations = std::move(decls);
 		for (auto& decl : result->variable_declarations) {
 			set_parent(result, decl);
+		}
+		return std::move(result);
+	}
+
+	auto properties::clone() -> unique_ptr<properties> {
+		auto result = make_unique<properties>();
+		for (auto& decl : variable_declarations) {
+			result->add_decl(decl->clone());
 		}
 		return std::move(result);
 	}
@@ -64,6 +84,10 @@ namespace ast {
 		result->member_op = member_op;
 		result->field_name = field_name;
 		return std::move(result);
+	}
+
+	auto field::clone() -> unique_ptr<field> {
+		return make(unit, member_op, field_name);
 	}
 
 	auto field::get_type() -> variable_type* {
@@ -125,7 +149,7 @@ namespace ast {
 	}
 
 	auto field::get_builtin_fields() -> map<string, variable_type>& {
-		static auto result = map<string, variable_type>{
+		static auto result = map<string, variable_type> {
 			{"hp", variable_type::make_value(type_enum::INT, 1, 99999999)},
 			{"mana", variable_type::make_value(type_enum::INT, 0, 99999999)},
 			{"hpRegenerationRate", variable_type::make_value(type_enum::FLOAT, 0, 0)},
@@ -167,10 +191,33 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto arithmetic_value::clone() -> unique_ptr<arithmetic_value> {
+		if (std::holds_alternative<unique_ptr<field>>(value)) {
+			return make(std::get<unique_ptr<field>>(value)->clone());
+		} else {
+			auto result = make_unique<arithmetic_value>();
+			std::visit(overloaded {
+				[&] (unique_ptr<field>& _) {},
+				[&] (auto& v) { result->value = v; }
+			}, value);
+			return std::move(result);
+		}
+	}
+
 	auto arithmetic::make(arithmetic::arithmetic_expr&& expr) -> unique_ptr<arithmetic> {
 		auto result = make_unique<arithmetic>();
 		result->expr = std::move(expr);
 		std::visit([&] (auto& node) { set_parent(result, node); }, result->expr);
+		return std::move(result);
+	}
+
+	auto arithmetic::clone() -> unique_ptr<arithmetic> {
+		auto result = make_unique<arithmetic>();
+		std::visit([&] (auto& node) {
+			auto copy = node->clone();
+			set_parent(result, copy);
+			result->expr = std::move(copy);
+		}, expr);
 		return std::move(result);
 	}
 
@@ -185,6 +232,10 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto comparison::clone() -> unique_ptr<comparison> {
+		return make(lhs->clone(), rhs->clone(), comparison_type);
+	}
+
 	auto negated::make(unique_ptr<logical>&& expr) -> unique_ptr<negated> {
 		auto result = make_unique<negated>();
 		result->expr = std::move(expr);
@@ -192,10 +243,24 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto negated::clone() -> unique_ptr<negated> {
+		return make(expr->clone());
+	}
+
 	auto logical::make(logical::logical_expr&& expr) -> unique_ptr<logical> {
 		auto result = make_unique<logical>();
 		result->expr = std::move(expr);
 		std::visit([&] (auto& node) { set_parent(result, node); }, result->expr);
+		return std::move(result);
+	}
+
+	auto logical::clone() -> unique_ptr<logical> {
+		auto result = make_unique<logical>();
+		std::visit([&] (auto& node) {
+			auto copy = node->clone();
+			set_parent(result, copy);
+			result->expr = std::move(copy);
+		}, expr);
 		return std::move(result);
 	}
 
@@ -208,6 +273,12 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto assignment::clone() -> unique_ptr<assignment> {
+		auto result = unique_ptr<assignment>();
+		std::visit([&] (auto& node) { result = make(lhs->clone(), node->clone()); }, rhs);
+		return std::move(result);
+	}
+
 	auto continuous_if::make(unique_ptr<logical>&& condition, unique_ptr<always_body>&& body) -> unique_ptr<continuous_if> {
 		auto result = make_unique<continuous_if>();
 		result->condition = std::move(condition);
@@ -216,12 +287,20 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto continuous_if::clone() -> unique_ptr<continuous_if> {
+		return make(condition->clone(), body->clone());
+	}
+
 	auto transition_if::make(unique_ptr<logical>&& condition, unique_ptr<always_body>&& body) -> unique_ptr<transition_if> {
 		auto result = make_unique<transition_if>();
 		result->condition = std::move(condition);
 		result->body = std::move(body);
 		set_parent(result, result->condition, result->body);
 		return std::move(result);
+	}
+
+	auto transition_if::clone() -> unique_ptr<transition_if> {
+		return make(condition->clone(), body->clone());
 	}
 
 	auto for_in::make(string variable, double range, unit_object range_unit, vector<string>& traits, unique_ptr<always_body>&& body) -> unique_ptr<for_in> {
@@ -233,6 +312,10 @@ namespace ast {
 		result->body = std::move(body);
 		set_parent(result, result->body);
 		return std::move(result);
+	}
+
+	auto for_in::clone() -> unique_ptr<for_in> {
+		return make(variable, range, range_unit, traits, body->clone());
 	}
 
 	void for_in::replace_body(unique_ptr<always_body>&& new_body) {
@@ -254,6 +337,18 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto always_body::clone() -> unique_ptr<always_body> {
+		auto result = make_unique<always_body>();
+		for (auto& expr : exprs) {
+			std::visit([&] (auto& node) {
+				auto copy = node->clone();
+				set_parent(result, copy);
+				result->exprs.push_back(std::move(copy));
+			}, expr);
+		}
+		return std::move(result);
+	}
+
 	void always_body::insert_expr(expression&& expr) {
 		std::visit([&] (auto& node) { set_parent(this, node); }, expr);
 		exprs.emplace_back(std::move(expr));
@@ -266,6 +361,10 @@ namespace ast {
 		result->body = std::move(body);
 		set_parent(result, result->props, result->body);
 		return std::move(result);
+	}
+
+	auto trait::clone() -> unique_ptr<trait> {
+		return make(name, props->clone(), body->clone());
 	}
 
 	auto trait::get_property(string name) -> variable_decl* {
@@ -284,12 +383,25 @@ namespace ast {
 		return std::move(result);
 	}
 
+	auto trait_initializer::clone() -> unique_ptr<trait_initializer> {
+		return make(name, initial_values);
+	}
+
 	auto unit_traits::make(string name, vector<unique_ptr<trait_initializer>>&& traits) -> unique_ptr<unit_traits> {
 		auto result = make_unique<unit_traits>();
 		result->name = name;
 		result->traits = std::move(traits);
 		for (auto& trait : result->traits) {
 			set_parent(result, trait);
+		}
+		return std::move(result);
+	}
+
+	auto unit_traits::clone() -> unique_ptr<unit_traits> {
+		auto result = make_unique<unit_traits>();
+		result->name = name;
+		for (auto& trait : traits) {
+			result->traits.push_back(trait->clone());
 		}
 		return std::move(result);
 	}
@@ -308,6 +420,21 @@ namespace ast {
 		}
 		for (auto& single_unit_traits : result->all_unit_traits) {
 			set_parent(result, single_unit_traits);
+		}
+		return std::move(result);
+	}
+
+	auto program::clone() -> unique_ptr<program> {
+		auto result = make_unique<program>();
+		for (auto& trait : traits) {
+			auto copy = trait->clone();
+			set_parent(result, copy);
+			result->traits.push_back(std::move(copy));
+		}
+		for (auto& single_unit_traits : all_unit_traits) {
+			auto copy = single_unit_traits->clone();
+			set_parent(result, copy);
+			result->all_unit_traits.push_back(std::move(copy));
 		}
 		return std::move(result);
 	}

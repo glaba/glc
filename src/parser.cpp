@@ -54,7 +54,7 @@ namespace rules {
     /*** Types ***/
     struct ty_bool : TAO_PEGTL_STRING("bool") {};
     struct ty_float : TAO_PEGTL_STRING("float") {};
-    struct ty_int : sseq<TAO_PEGTL_STRING("int"), sopt<one<'<'>, val_int, one<','>, val_int, one<'>'>>> {};
+    struct ty_int : sseq<TAO_PEGTL_STRING("int"), one<'<'>, val_int, one<','>, val_int, one<'>'>> {};
     struct variable_type : sor<ty_bool, ty_float, ty_int> {};
 
     /*******************************/

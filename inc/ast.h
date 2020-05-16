@@ -36,6 +36,10 @@ namespace ast {
 			return make_unique<Impl>();
 		}
 
+		virtual auto clone() -> unique_ptr<Impl> {
+			return make_unique<Impl>();
+		}
+
 		virtual auto get_id() -> size_t {
 			return id();
 		}
@@ -88,7 +92,8 @@ namespace ast {
     }
 
     // Forward declarations of AST types
-    struct arithmetic;
+    struct add; struct mul; struct sub; struct div; struct mod; struct exp;
+    struct and_op; struct or_op; struct comparison; struct negated;
     struct for_in;
     struct trait;
     struct program;
@@ -117,6 +122,7 @@ namespace ast {
 		long min, max;
 
 		static auto make(long min, long max) -> unique_ptr<ty_int>;
+		auto clone() -> unique_ptr<ty_int>;
 	};
 
 	struct variable_type : node_impl<variable_type> {
@@ -125,6 +131,7 @@ namespace ast {
 
 		static auto make_value(type_enum type, long min, long max) -> variable_type;
 		static auto make(type_enum type, long min, long max) -> unique_ptr<variable_type>;
+		auto clone() -> unique_ptr<variable_type>;
 		auto is_arithmetic() -> bool;
 		auto is_logical() -> bool;
 	};
@@ -134,12 +141,14 @@ namespace ast {
 		string name;
 
 		static auto make(unique_ptr<variable_type>&& type, string name) -> unique_ptr<variable_decl>;
+		auto clone() -> unique_ptr<variable_decl>;
 	};
 
 	struct properties : node_impl<properties> {
 		vector<unique_ptr<variable_decl>> variable_declarations;
 
 		static auto make(vector<unique_ptr<variable_decl>>&& decls) -> unique_ptr<properties>;
+		auto clone() -> unique_ptr<properties>;
 		void add_decl(unique_ptr<variable_decl>&& decl);
 	};
 
@@ -158,6 +167,7 @@ namespace ast {
 		string field_name;
 
 		static auto make(unit_object unit, member_op_enum member_op, string field_name) -> unique_ptr<field>;
+		auto clone() -> unique_ptr<field>;
 		auto get_type() -> variable_type*;
 		// If the unit_object has type identifier_unit, returns the loop where the unit object was declared
 		auto get_loop_from_identifier() -> for_in*;
@@ -168,29 +178,11 @@ namespace ast {
 		static auto get_builtin_fields() -> map<string, variable_type>&;
 	};
 
-	template <typename Impl>
-	struct arithmetic_op : node_impl<Impl> {
-		unique_ptr<arithmetic> expr_1, expr_2;
-
-		static auto make(unique_ptr<arithmetic>&& expr_1, unique_ptr<arithmetic>&& expr_2) -> unique_ptr<Impl> {
-			auto result = make_unique<Impl>();
-			result->expr_1 = std::move(expr_1);
-			result->expr_2 = std::move(expr_2);
-			set_parent(result, result->expr_1, result->expr_2);
-			return std::move(result);
-		}
-	};
-
-	struct add : arithmetic_op<add> {};
-	struct mul : arithmetic_op<mul> {};
-	struct sub : arithmetic_op<sub> {};
-	struct div : arithmetic_op<div> {};
-	struct mod : arithmetic_op<mod> {};
-	struct exp : arithmetic_op<exp> {};
 	struct arithmetic_value : node_impl<arithmetic_value> {
 		variant<unique_ptr<field>, long, double> value;
 
 		static auto make(variant<unique_ptr<field>, long, double>&& value) -> unique_ptr<arithmetic_value>;
+		auto clone() -> unique_ptr<arithmetic_value>;
 	};
 
 	struct arithmetic : node_impl<arithmetic> {
@@ -204,7 +196,32 @@ namespace ast {
 		static auto from_value(V&& value) {
 			return make(arithmetic_value::make(std::move(value)));
 		}
+		auto clone() -> unique_ptr<arithmetic>;
 	};
+
+	template <typename Impl>
+	struct arithmetic_op : node_impl<Impl> {
+		unique_ptr<arithmetic> expr_1, expr_2;
+
+		static auto make(unique_ptr<arithmetic>&& expr_1, unique_ptr<arithmetic>&& expr_2) -> unique_ptr<Impl> {
+			auto result = make_unique<Impl>();
+			result->expr_1 = std::move(expr_1);
+			result->expr_2 = std::move(expr_2);
+			set_parent(result, result->expr_1, result->expr_2);
+			return std::move(result);
+		}
+
+		auto clone() -> unique_ptr<Impl> {
+			return make(expr_1->clone(), expr_2->clone());
+		}
+	};
+
+	struct add : arithmetic_op<add> {};
+	struct mul : arithmetic_op<mul> {};
+	struct sub : arithmetic_op<sub> {};
+	struct div : arithmetic_op<div> {};
+	struct mod : arithmetic_op<mod> {};
+	struct exp : arithmetic_op<exp> {};
 
 	enum comparison_enum { EQ, NEQ, GT, LT, GTE, LTE };
 	struct comparison : node_impl<comparison> {
@@ -213,9 +230,19 @@ namespace ast {
 
 		static auto make(unique_ptr<arithmetic>&& lhs, unique_ptr<arithmetic>&& rhs,
 			comparison_enum comparison_type) -> unique_ptr<comparison>;
+		auto clone() -> unique_ptr<comparison>;
 	};
 
-	struct logical;
+	struct logical : node_impl<logical> {
+		using logical_expr = variant<
+			unique_ptr<and_op>, unique_ptr<or_op>,
+			unique_ptr<field>, unique_ptr<val_bool>, unique_ptr<comparison>, unique_ptr<negated>>;
+		logical_expr expr;
+
+		static auto make(logical_expr&& expr) -> unique_ptr<logical>;
+		auto clone() -> unique_ptr<logical>;
+	};
+
 	template <typename Impl>
 	struct logical_op : node_impl<Impl> {
 		unique_ptr<logical> expr_1, expr_2;
@@ -227,6 +254,10 @@ namespace ast {
 			set_parent(result, result->expr_1, result->expr_2);
 			return std::move(result);
 		}
+
+		auto clone() -> unique_ptr<Impl> {
+			return make(expr_1->clone(), expr_2->clone());
+		}
 	};
 	struct and_op : logical_op<and_op> {};
 	struct or_op : logical_op<or_op> {};
@@ -235,15 +266,7 @@ namespace ast {
 		unique_ptr<logical> expr;
 
 		static auto make(unique_ptr<logical>&& expr) -> unique_ptr<negated>;
-	};
-
-	struct logical : node_impl<logical> {
-		using logical_expr = variant<
-			unique_ptr<and_op>, unique_ptr<or_op>,
-			unique_ptr<field>, unique_ptr<val_bool>, unique_ptr<comparison>, unique_ptr<negated>>;
-		logical_expr expr;
-
-		static auto make(logical_expr&& expr) -> unique_ptr<logical>;
+		auto clone() -> unique_ptr<negated>;
 	};
 
 	struct assignment : node_impl<assignment> {
@@ -251,6 +274,7 @@ namespace ast {
 		variant<unique_ptr<arithmetic>, unique_ptr<logical>> rhs;
 
 		static auto make(unique_ptr<field>&& lhs, variant<unique_ptr<arithmetic>, unique_ptr<logical>>&& rhs) -> unique_ptr<assignment>;
+		auto clone() -> unique_ptr<assignment>;
 	};
 
 	struct always_body;
@@ -259,6 +283,7 @@ namespace ast {
 		unique_ptr<always_body> body;
 
 		static auto make(unique_ptr<logical>&& condition, unique_ptr<always_body>&& body) -> unique_ptr<continuous_if>;
+		auto clone() -> unique_ptr<continuous_if>;
 	};
 
 	struct transition_if : node_impl<transition_if> {
@@ -266,6 +291,7 @@ namespace ast {
 		unique_ptr<always_body> body;
 
 		static auto make(unique_ptr<logical>&& condition, unique_ptr<always_body>&& body) -> unique_ptr<transition_if>;
+		auto clone() -> unique_ptr<transition_if>;
 	};
 
 	struct for_in : node_impl<for_in> {
@@ -277,6 +303,7 @@ namespace ast {
 
 		static auto make(string variable, double range, unit_object range_unit, vector<string>& traits,
 			unique_ptr<always_body>&& body) -> unique_ptr<for_in>;
+		auto clone() -> unique_ptr<for_in>;
 
 		void replace_body(unique_ptr<always_body>&& new_body);
 		// Returns the loop the range_unit was declared in if the unit is an identifier_unit
@@ -288,6 +315,7 @@ namespace ast {
 		vector<expression> exprs;
 
 		static auto make(vector<expression>&& exprs) -> unique_ptr<always_body>;
+		auto clone() -> unique_ptr<always_body>;
 		void insert_expr(expression&& expr);
 	};
 
@@ -297,6 +325,7 @@ namespace ast {
 		unique_ptr<always_body> body;
 
 		static auto make(string name, unique_ptr<properties>&& props, unique_ptr<always_body>&& body) -> unique_ptr<trait>;
+		auto clone() -> unique_ptr<trait>;
 		auto get_property(string name) -> variable_decl*;
 	};
 
@@ -305,6 +334,7 @@ namespace ast {
 		map<string, literal_value> initial_values;
 
 		static auto make(string name, map<string, literal_value> initial_values) -> unique_ptr<trait_initializer>;
+		auto clone() -> unique_ptr<trait_initializer>;
 	};
 
 	struct unit_traits : node_impl<unit_traits> {
@@ -312,6 +342,7 @@ namespace ast {
 		vector<unique_ptr<trait_initializer>> traits;
 
 		static auto make(string name, vector<unique_ptr<trait_initializer>>&& traits) -> unique_ptr<unit_traits>;
+		auto clone() -> unique_ptr<unit_traits>;
 		void insert_initializer(unique_ptr<trait_initializer>&& trait);
 	};
 
@@ -320,6 +351,7 @@ namespace ast {
 		vector<unique_ptr<unit_traits>> all_unit_traits;
 
 		static auto make(vector<unique_ptr<trait>>&& traits, vector<unique_ptr<unit_traits>>&& all_unit_traits) -> unique_ptr<program>;
+		auto clone() -> unique_ptr<program>;
 
 		void insert_trait(unique_ptr<trait>&& trait);
 		auto get_trait(string name) -> trait*;
