@@ -1,0 +1,39 @@
+mod LWG is
+	sort Arithmetic .
+	sort Logical .
+
+	op _+_ : Arithmetic Arithmetic -> Arithmetic [assoc comm] .
+	op _*_ : Arithmetic Arithmetic -> Arithmetic [assoc comm] .
+	op -_ : Arithmetic -> Arithmetic .
+	op inv _ : Arithmetic -> Arithmetic .
+	op _-_ : Arithmetic Arithmetic -> Arithmetic .
+	op _/_ : Arithmetic Arithmetic -> Arithmetic .
+	op _%_ : Arithmetic Arithmetic -> Arithmetic .
+	op _^_ : Arithmetic Arithmetic -> Arithmetic .
+
+	op _eqs_ : Arithmetic Arithmetic -> Logical [comm] .
+	op _neq_ : Arithmetic Arithmetic -> Logical [comm] .
+	op _gt_ : Arithmetic Arithmetic -> Logical .
+	op _lt_ : Arithmetic Arithmetic -> Logical .
+	op _gte_ : Arithmetic Arithmetic -> Logical .
+	op _lte_ : Arithmetic Arithmetic -> Logical .
+	op not_ : Logical -> Logical .
+	op _and_ : Logical Logical -> Logical [assoc comm] .
+	op _or_ : Logical Logical -> Logical [assoc comm] .
+
+	*** Small set of common arithmetic and logical simplification rules
+	eq N - M = N + ( - M ) .
+	eq N / M = N * inv M .
+	eq -(-(N)) = N .
+	eq inv(inv(N)) = N .
+	eq N * (- M) = -(N * M) .
+	eq N * (M + J) = (N * M) + (N * J) .
+	eq N ^ (M + J) = (N ^ M) * (N ^ J) .
+
+	eq N neq M = not (N == M) .
+	eq N gt M = M lt N .
+	eq N gte M = not (N lt M) .
+	eq N lte M = not (M lt N) .
+	eq not(not(P)) = P .
+	eq not (P and Q) = (not P) or (not Q) .
+endm

@@ -39,21 +39,20 @@ int main(int argc, char **argv) {
     try {
         pm.run_pass<parser>(input_file);
         pm.run_pass<semantic_checker>();
-        pm.run_pass<print_program>();
+
+        print_program pp(*pm.get_pass<parser>()->program);
         std::cout << TTY_CYAN << "original input" << TTY_RESET << std::endl;
-        std::cout << pm.get_pass<print_program>()->get_output() << std::endl;
+        std::cout << pp.get_output() << std::endl;
 
         pm.run_pass<collapse_traits>();
         pm.run_pass<semantic_checker>();
-        pm.run_pass<print_program>();
-        std::cout << TTY_CYAN << "collapse_traits" << TTY_RESET << std::endl;
-        std::cout << pm.get_pass<print_program>()->get_output() << std::endl;
+        // std::cout << TTY_CYAN << "collapse_traits" << TTY_RESET << std::endl;
+        // std::cout << pp.get_output() << std::endl;
 
         pm.run_pass<merge_ifs>();
         pm.run_pass<semantic_checker>();
-        pm.run_pass<print_program>();
         std::cout << TTY_CYAN << "merge_ifs" << TTY_RESET << std::endl;
-        std::cout << pm.get_pass<print_program>()->get_output() << std::endl;
+        std::cout << pp.get_output() << std::endl;
 
         std::cout << TTY_GREEN << "Compilation succeeded" << TTY_RESET << std::endl;
     } catch (vector<string>& errors) {

@@ -9,6 +9,5 @@ public:
 	merge_ifs(pass_manager& pm);
 
 private:
-	pass_manager& pm;
 	ast::program& program;
 };

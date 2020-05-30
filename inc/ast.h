@@ -107,11 +107,14 @@ namespace ast {
 			result->value = value;
 			return std::move(result);
 		}
+
+		virtual auto clone() -> unique_ptr<Impl> {
+			return make(value);
+		}
 	};
 	struct val_bool : val_T<val_bool, bool> {};
 	struct val_float : val_T<val_float, double> {};
 	struct val_int : val_T<val_int, long> {};
-	using literal = variant<unique_ptr<val_bool>, unique_ptr<val_float>, unique_ptr<val_int>>;
 	using literal_value = variant<bool, double, long>;
 
 	enum type_enum { BOOL, INT, FLOAT };
