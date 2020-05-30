@@ -1,0 +1,45 @@
+trait infection {
+	properties {
+		infected : bool,
+		contagious : bool
+	}
+
+	always {
+		if becomes this.infected {
+			this::hpRegenerationRate = type::hpRegenerationRate - 4;
+		}
+		if this.infected and this.contagious {
+			for u in range 2 of this with trait infection {
+				u.infected = true;
+			}
+		}
+	}
+}
+
+trait induces_contagiousness {
+	properties {
+		activated : bool
+	}
+
+	always {
+		if this.activated {
+			for u in range 300 of this with trait infection {
+				u.contagious = true;
+			}
+		}
+	}
+}
+
+trait activates_random_tower {
+	properties {}
+
+	always {
+		for tower in range 9 of this with trait induces_contagiousness {
+			tower.activated = true;
+		}
+	}
+}
+
+unit Worker : infection;
+unit WigglyWolf : activates_random_tower;
+unit RandomTower : induces_contagiousness;

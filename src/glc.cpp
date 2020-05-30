@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "parser.h"
 #include "pass_manager.h"
+#include "simplify_transition_ifs.h"
 #include "semantic_checker.h"
 #include "collapse_traits.h"
 #include "print_program.h"
@@ -44,10 +45,15 @@ int main(int argc, char **argv) {
         std::cout << TTY_CYAN << "original input" << TTY_RESET << std::endl;
         std::cout << pp.get_output() << std::endl;
 
+        pm.run_pass<simplify_transition_ifs>();
+        pm.run_pass<semantic_checker>();
+        std::cout << TTY_CYAN << "simplify_transition_ifs" << TTY_RESET << std::endl;
+        std::cout << pp.get_output() << std::endl;
+
         pm.run_pass<collapse_traits>();
         pm.run_pass<semantic_checker>();
-        // std::cout << TTY_CYAN << "collapse_traits" << TTY_RESET << std::endl;
-        // std::cout << pp.get_output() << std::endl;
+        std::cout << TTY_CYAN << "collapse_traits" << TTY_RESET << std::endl;
+        std::cout << pp.get_output() << std::endl;
 
         pm.run_pass<merge_ifs>();
         pm.run_pass<semantic_checker>();

@@ -24,6 +24,9 @@ collapse_traits::collapse_traits(pass_manager& pm)
 	create_collapsed_trait();
 }
 
+// Renames each variable v within a trait t to ~t~v, where the dollar sign is used to ensure
+//  that there are no naming conflicts, since it is a disallowed character
+
 struct rename_variable_uses_visitor {
 	pass_manager& pm;
 	ast::program& program;
@@ -41,7 +44,7 @@ struct rename_variable_uses_visitor {
 		std::visit(ast::overloaded {
 			[&] (ast::this_unit& _) {
 				auto cur_trait = ast::find_parent<ast::trait>(f);
-				f.field_name = "_" + cur_trait->name + "_" + f.field_name;
+				f.field_name = cur_trait->name + "~" + f.field_name;
 			},
 			[&] (ast::type_unit& _) {
 				assert(false);
@@ -49,7 +52,7 @@ struct rename_variable_uses_visitor {
 			[&] (ast::identifier_unit& _) {
 				auto origin_trait = f.get_trait()->name;
 				assert(!origin_trait.empty());
-				f.field_name = "_" + origin_trait + "_" + f.field_name;
+				f.field_name = origin_trait + "~" + f.field_name;
 			}
 		}, f.unit);
 	}
@@ -57,7 +60,7 @@ struct rename_variable_uses_visitor {
 	void operator()(ast::trait_initializer& t) {
 		auto new_initial_values = map<string, ast::literal_value>();
 		for (auto& [field_name, value] : t.initial_values) {
-			new_initial_values["_" + t.name + "_" + field_name] = value;
+			new_initial_values[t.name + "~" + field_name] = value;
 		}
 		t.initial_values = new_initial_values;
 	}
@@ -69,7 +72,7 @@ struct rename_variable_decls_visitor {
 	rename_variable_decls_visitor(string trait_name) : trait_name(trait_name) {}
 
 	void operator()(ast::variable_decl& decl) {
-		decl.name = "_" + trait_name + "_" + decl.name;
+		decl.name = trait_name + "~" + decl.name;
 	}
 };
 
@@ -205,7 +208,7 @@ void collapse_traits::create_collapsed_trait() {
 		for (auto& trait_initializer : cur_unit_traits->traits) {
 			// Add the initial values for the current trait with transformed variable names
 			for (auto& [field_name, initial_value] : trait_initializer->initial_values) {
-				initial_values["_" + trait_initializer->name + "_" + field_name] = initial_value;
+				initial_values["~" + trait_initializer->name + "~" + field_name] = initial_value;
 			}
 
 			// Add a bit in the bitfield indicating that this trait is active
