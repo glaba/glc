@@ -27,9 +27,10 @@ struct simplify_transition_ifs_visitor {
 		auto prev_val_decl = variable_decl::make(variable_type::make(type_enum::BOOL, 0, 0), prev_val);
 		find_parent<trait>(n)->props->add_decl(std::move(prev_val_decl));
 
-		// Add an assignment statement prev~# = condition causing prev~# to follow behind by one tick
+		// Add an assignment statement prev~# := condition causing prev~# to follow behind by one tick
 		auto follower = assignment::make(
 			field::make(this_unit(), member_op_enum::CUSTOM, prev_val),
+			assignment_enum::ABSOLUTE,
 			n.condition->clone());
 		new_exprs.emplace_back(std::move(follower));
 

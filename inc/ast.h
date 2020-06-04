@@ -168,8 +168,9 @@ namespace ast {
 		unit_object unit;
 		member_op_enum member_op;
 		string field_name;
+		bool is_rate;
 
-		static auto make(unit_object unit, member_op_enum member_op, string field_name) -> unique_ptr<field>;
+		static auto make(unit_object unit, member_op_enum member_op, string field_name, bool is_rate = false) -> unique_ptr<field>;
 		auto clone() -> unique_ptr<field>;
 		auto get_type() -> variable_type*;
 		// If the unit_object has type identifier_unit, returns the loop where the unit object was declared
@@ -272,11 +273,15 @@ namespace ast {
 		auto clone() -> unique_ptr<negated>;
 	};
 
+	enum assignment_enum { ABSOLUTE, RELATIVE };
 	struct assignment : node_impl<assignment> {
-		unique_ptr<field> lhs;
-		variant<unique_ptr<arithmetic>, unique_ptr<logical>> rhs;
+		using rhs_t = variant<unique_ptr<arithmetic>, unique_ptr<logical>>;
 
-		static auto make(unique_ptr<field>&& lhs, variant<unique_ptr<arithmetic>, unique_ptr<logical>>&& rhs) -> unique_ptr<assignment>;
+		unique_ptr<field> lhs;
+		assignment_enum assignment_type;
+		rhs_t rhs;
+
+		static auto make(unique_ptr<field>&& lhs, assignment_enum assignment_type, rhs_t&& rhs) -> unique_ptr<assignment>;
 		auto clone() -> unique_ptr<assignment>;
 	};
 

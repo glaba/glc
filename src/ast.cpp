@@ -78,16 +78,17 @@ namespace ast {
 		variable_declarations.emplace_back(std::move(decl));
 	}
 
-	auto field::make(unit_object unit, member_op_enum member_op, string field_name) -> unique_ptr<field> {
+	auto field::make(unit_object unit, member_op_enum member_op, string field_name, bool is_rate) -> unique_ptr<field> {
 		auto result = make_unique<field>();
 		result->unit = unit;
 		result->member_op = member_op;
 		result->field_name = field_name;
+		result->is_rate = is_rate;
 		return std::move(result);
 	}
 
 	auto field::clone() -> unique_ptr<field> {
-		return make(unit, member_op, field_name);
+		return make(unit, member_op, field_name, is_rate);
 	}
 
 	auto field::get_type() -> variable_type* {
@@ -264,9 +265,10 @@ namespace ast {
 		return std::move(result);
 	}
 
-	auto assignment::make(unique_ptr<field>&& lhs, variant<unique_ptr<arithmetic>, unique_ptr<logical>>&& rhs) -> unique_ptr<assignment> {
+	auto assignment::make(unique_ptr<field>&& lhs, assignment_enum assignment_type, rhs_t&& rhs) -> unique_ptr<assignment> {
 		auto result = make_unique<assignment>();
 		result->lhs = std::move(lhs);
+		result->assignment_type = assignment_type;
 		result->rhs = std::move(rhs);
 		set_parent(result, result->lhs);
 		std::visit([&] (auto& node) { set_parent(result, node); }, result->rhs);
@@ -275,7 +277,7 @@ namespace ast {
 
 	auto assignment::clone() -> unique_ptr<assignment> {
 		auto result = unique_ptr<assignment>();
-		std::visit([&] (auto& node) { result = make(lhs->clone(), node->clone()); }, rhs);
+		std::visit([&] (auto& node) { result = make(lhs->clone(), assignment_type, node->clone()); }, rhs);
 		return std::move(result);
 	}
 

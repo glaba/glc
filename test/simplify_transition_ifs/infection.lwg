@@ -6,11 +6,11 @@ trait infection {
 
 	always {
 		if becomes this.infected {
-			this::hpRegenerationRate = type::hpRegenerationRate - 4;
+			this::hpRegenerationRate += -4;
 		}
 		if this.infected and this.contagious {
 			for u in range 2 of this with trait infection {
-				u.infected = true;
+				u.infected := true;
 			}
 		}
 	}
@@ -24,7 +24,7 @@ trait induces_contagiousness {
 	always {
 		if this.activated {
 			for u in range 300 of this with trait infection {
-				u.contagious = true;
+				u.contagious := true;
 			}
 		}
 	}
@@ -35,7 +35,7 @@ trait activates_random_tower {
 
 	always {
 		for tower in range 9 of this with trait induces_contagiousness {
-			tower.activated = true;
+			tower.activated := true;
 		}
 	}
 }

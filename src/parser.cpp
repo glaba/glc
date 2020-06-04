@@ -50,6 +50,9 @@ namespace rules {
     struct kw_with_trait : sseq<TAO_PEGTL_STRING("with"), TAO_PEGTL_STRING("trait")> {};
     struct kw_unit : TAO_PEGTL_STRING("unit") {};
     struct kw_becomes : TAO_PEGTL_STRING("becomes") {};
+    struct kw_abs_assignment : TAO_PEGTL_STRING(":=") {};
+    struct kw_rel_assignment : TAO_PEGTL_STRING("+=") {};
+    struct kw_rate_field : TAO_PEGTL_STRING("->rate") {};
 
     /*** Types ***/
     struct ty_bool : TAO_PEGTL_STRING("bool") {};
@@ -62,7 +65,8 @@ namespace rules {
     /*******************************/
     struct unit_object : sor<kw_this, kw_type, identifier> {};
     struct member_operator : sor<TAO_PEGTL_STRING("::"), TAO_PEGTL_STRING("."), TAO_PEGTL_STRING("->")> {};
-    struct field : sseq<unit_object, member_operator, identifier> {};
+    // TODO: hacky addition to add on rate, will change if more subfields are added on
+    struct field : sseq<unit_object, member_operator, identifier, opt<kw_rate_field>> {};
 
     /*** Arithmetic ***/
     struct add_op : one<'+'> {};
@@ -104,7 +108,7 @@ namespace rules {
 
     /*** Always body and expressions ***/
     struct always_body;
-    struct assignment : sseq<field, one<'='>, sor<arithmetic, logical>, one<';'>> {};
+    struct assignment : sseq<field, sor<kw_abs_assignment, kw_rel_assignment>, sor<arithmetic, logical>, one<';'>> {};
     struct continuous_if : sseq<kw_if, logical, one<'{'>, always_body, one<'}'>> {};
     struct transition_if : sseq<kw_if, kw_becomes, logical, one<'{'>, always_body, one<'}'>> {};
     struct for_in : sseq<kw_for, identifier, kw_in_range, sor<val_float, val_int>, kw_of, unit_object,
@@ -354,6 +358,7 @@ namespace selectors {
                 data->member_op = ast::member_op_enum::LANGUAGE;
 
             data->field_name = n.children[2]->string();
+            data->is_rate = n.children.size() > 3;
         }
     };
     using field_sel = typename selector<field, ast::field>::on<rules::field>;
@@ -564,11 +569,18 @@ namespace selectors {
 
     struct assignment {
         static void apply(ast_node& n, ast::assignment *data) {
-            ast::set_parent(data, n.children[0]->data, n.children[1]->data);
+            ast::set_parent(data, n.children[0]->data, n.children[2]->data);
 
             data->lhs = own_as<ast::field>(n.children[0]->data);
 
-            auto& rhs = n.children[1];
+            auto& assignment_type = n.children[1];
+            if (assignment_type->template is_type<rules::kw_abs_assignment>()) {
+                data->assignment_type = ast::assignment_enum::ABSOLUTE;
+            } else if (assignment_type->template is_type<rules::kw_rel_assignment>()) {
+                data->assignment_type = ast::assignment_enum::RELATIVE;
+            }
+
+            auto& rhs = n.children[2];
             if (rhs->template is_type<rules::arithmetic>()) {
                 data->rhs = own_as<ast::arithmetic>(rhs->data);
             } else if (rhs->template is_type<rules::logical>()) {
@@ -704,6 +716,7 @@ namespace selectors {
         parse_tree::store_content::on<
             identifier,
             rules::member_operator, rules::kw_this, rules::kw_type,
+            rules::kw_abs_assignment, rules::kw_rel_assignment, rules::kw_rate_field,
             rules::add_op, rules::sub_op, rules::mul_op, rules::div_op, rules::mod_op, rules::exp_op,
             rules::and_op, rules::or_op,
             rules::eq_op, rules::neq_op, rules::gt_op, rules::lt_op, rules::gte_op, rules::lte_op

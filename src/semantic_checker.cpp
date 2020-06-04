@@ -61,6 +61,16 @@ struct semantic_checker_visitor {
 	}
 
 	void operator()(ast::field& n) {
+		// Check that if this is a rate field, it is the LHS of a relative assignment
+		if (n.is_rate) {
+			if (n.parent()->get_id() != ast::assignment::id() ||
+				static_cast<ast::assignment*>(n.parent())->assignment_type != ast::assignment_enum::RELATIVE ||
+				static_cast<ast::assignment*>(n.parent())->lhs.get() != &n)
+			{
+				error(n, "Rate of property can only be used in the LHS of a relative assignment");
+			}
+		}
+
 		switch (n.member_op) {
 			case ast::member_op_enum::CUSTOM: {
 				std::visit(ast::overloaded {
@@ -142,6 +152,30 @@ struct semantic_checker_visitor {
 	void operator()(ast::assignment& n) {
 		if (std::holds_alternative<ast::type_unit>(n.lhs->unit)) {
 			error(n, "Cannot assign values to special unit object 'type'");
+		}
+
+		if (n.lhs->is_rate) {
+			// Rate assignments can only be relative
+
+			if (std::holds_alternative<unique_ptr<ast::logical>>(n.rhs)) {
+				error(n, "Cannot modify rate of logical field " + quote(n.lhs->field_name));
+			} else {
+				// Check that the RHS is a constant value
+				auto& rhs_arithmetic = std::get<unique_ptr<ast::arithmetic>>(n.rhs);
+				auto non_const = false;
+				if (!std::holds_alternative<unique_ptr<ast::arithmetic_value>>(rhs_arithmetic->expr)) {
+					non_const = true;
+				} else {
+					auto& rhs_arithmetic_val = std::get<unique_ptr<ast::arithmetic_value>>(rhs_arithmetic->expr);
+					if (std::holds_alternative<unique_ptr<ast::field>>(rhs_arithmetic_val->value)) {
+						non_const = true;
+					}
+				}
+
+				if (non_const) {
+					error(n, "Rate must be set to a constant value");
+				}
+			}
 		}
 
 		auto lhs_type = n.lhs->get_type();

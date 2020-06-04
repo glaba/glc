@@ -1,0 +1,17 @@
+trait Test {
+    properties {
+        var1 : int<0, 5>,
+        var2 : bool,
+        var3 : float
+    }
+
+    always {
+        this.var1->rate := 5;
+        this.var1->rate += 5;
+        this.var2->rate += 1;
+        this.var3->rate += 5;
+        this.var3->rate += this::hp;
+        this.var3 += this.var1->rate;
+        if (this.var1->rate == 1) {}
+    }
+}
