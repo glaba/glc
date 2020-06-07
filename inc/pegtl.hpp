@@ -9940,7 +9940,7 @@ namespace TAO_PEGTL_NAMESPACE::parse_tree
              template< typename... > class Control = normal,
              typename Input,
              typename... States >
-   [[nodiscard]] std::unique_ptr< Node > parse( Input&& in, States&&... st )
+   std::unique_ptr< Node > parse( Input&& in, States&&... st )
    {
       internal::state< Node > state;
       if( !TAO_PEGTL_NAMESPACE::parse< Rule, Action, internal::make_control< Node, Selector, Control >::template type >( in, st..., state ) ) {

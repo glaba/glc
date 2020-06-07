@@ -738,8 +738,7 @@ parser::parser(pass_manager& pm, std::string input_file) {
     input = make_unique<string_input<>>(buffer.str(), "");
     line_to_file[0] = input_file;
 
-    auto const root = parse_tree::parse<rules::program, ast_node, selectors::ast_selector>(*input);
-    DEBUG(parse_tree::print_dot(std::cout, *root));
+    parse_tree::parse<rules::program, ast_node, selectors::ast_selector>(*input);
 
     program = std::move(program_ast);
     if (!program) {

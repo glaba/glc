@@ -1,5 +1,5 @@
 CXX      := g++
-CXXFLAGS := -Iinc -std=c++17 -Wall -O0 -g
+CXXFLAGS := -Iinc -std=c++17 -Wall -Wno-unused-variable -O3 -g
 all:   CXXFLAGS += -D'DEBUG(body)='
 debug: CXXFLAGS += -D'DEBUG(body)=body'
 LDFLAGS  :=

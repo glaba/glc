@@ -1,0 +1,32 @@
+trait traitA {
+	properties {
+		A: bool,
+		B: int<-100, 10000>,
+		C: float,
+		D: int<0, 1>
+	}
+
+	always {}
+}
+
+trait traitB {
+	properties {
+		A: int<-2047, 0>
+	}
+
+	always {}
+}
+
+trait traitC {
+	properties {
+		A: float,
+		B: float,
+		C: bool
+	}
+
+	always {}
+}
+
+unit unitA : traitA;
+unit unitB : traitB;
+unit unitC : traitC;

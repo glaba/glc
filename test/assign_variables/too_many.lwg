@@ -1,0 +1,45 @@
+trait traitA {
+	properties {
+		A: bool,
+		B: int<-100, 10000>,
+		C: float,
+		D: int<0, 1>,
+		E: float,
+		F: float,
+		G: float,
+		H: float,
+		I: float,
+		J: float,
+		K: float,
+		L: float,
+		M: float,
+		N: float,
+		O: float,
+		P: float,
+		Q: float,
+		R: float,
+		S: float,
+		V: float,
+		W: float,
+		X: float,
+		Y: float,
+		Z: float,
+		AA: int<0, 10>,
+		AB: int<0, 10>,
+		AC: int<0, 10>,
+		AD: float,
+		AE: float,
+		AF: float,
+		AG: float,
+		AH: float,
+		AI: float,
+		AJ: float,
+		AK: float,
+		AL: float,
+		AM: float
+	}
+
+	always {}
+}
+
+unit unitA : traitA;

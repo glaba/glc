@@ -6,6 +6,7 @@
 #include "collapse_traits.h"
 #include "print_program.h"
 #include "merge_ifs.h"
+#include "assign_variables.h"
 
 #include <string>
 #include <iostream>
@@ -42,23 +43,27 @@ int main(int argc, char **argv) {
         pm.run_pass<semantic_checker>();
 
         print_program pp(*pm.get_pass<parser>()->program);
-        std::cout << TTY_CYAN << "original input" << TTY_RESET << std::endl;
-        std::cout << pp.get_output() << std::endl;
+        DEBUG(std::cout << TTY_CYAN << "original input" << TTY_RESET << std::endl);
+        DEBUG(std::cout << pp.get_output() << std::endl);
 
         pm.run_pass<simplify_transition_ifs>();
         pm.run_pass<semantic_checker>();
-        std::cout << TTY_CYAN << "simplify_transition_ifs" << TTY_RESET << std::endl;
-        std::cout << pp.get_output() << std::endl;
+        DEBUG(std::cout << TTY_CYAN << "simplify_transition_ifs" << TTY_RESET << std::endl);
+        DEBUG(std::cout << pp.get_output() << std::endl);
 
         pm.run_pass<collapse_traits>();
         pm.run_pass<semantic_checker>();
-        std::cout << TTY_CYAN << "collapse_traits" << TTY_RESET << std::endl;
-        std::cout << pp.get_output() << std::endl;
+        DEBUG(std::cout << TTY_CYAN << "collapse_traits" << TTY_RESET << std::endl);
+        DEBUG(std::cout << pp.get_output() << std::endl);
 
         pm.run_pass<merge_ifs>();
         pm.run_pass<semantic_checker>();
-        std::cout << TTY_CYAN << "merge_ifs" << TTY_RESET << std::endl;
-        std::cout << pp.get_output() << std::endl;
+        DEBUG(std::cout << TTY_CYAN << "merge_ifs" << TTY_RESET << std::endl);
+        DEBUG(std::cout << pp.get_output() << std::endl);
+
+        DEBUG(std::cout << TTY_CYAN << "assign_variables" << TTY_RESET << std::endl);
+        pm.run_pass<assign_variables>();
+        DEBUG(std::cout << std::endl);
 
         std::cout << TTY_GREEN << "Compilation succeeded" << TTY_RESET << std::endl;
     } catch (vector<string>& errors) {

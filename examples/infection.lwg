@@ -1,7 +1,7 @@
 trait infection {
 	properties {
 		infected : bool,
-		contagious : bool
+		contagious : bool,
 	}
 
 	always {
